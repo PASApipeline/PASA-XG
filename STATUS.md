@@ -124,3 +124,27 @@ chr22 recovery (same LRAA assembly for all; "of" = supported by the reads):
 
 p30/p20/p0 columns: NMD + trust_FL + protection on. ("PASA rules" = the earlier run with
 first-ATG starts.)
+
+### Perl PASA on LRAA's isoforms (2026-10-26)
+
+Perl PASA given LRAA's 4,620 chr22 isoforms as transcripts (minimap2, `-I 100000`,
+FL = complete TransDecoder ORF via `-f`, default compare settings, 3 rounds), against
+PASA-XG on the same isoforms:
+
+| | Perl PASA | Perl, `--stringent_alignment_overlap 30` | PASA-XG, PASA rules | PASA-XG defaults | of |
+|---|---|---|---|---|---|
+| deleted genes recovered | 16 | 16 | 16 | 17 | 25 |
+| UTRs restored | 47 | 49 | 46 | 45 | 41 |
+| split genes rejoined (true chain) | 9 | 9 | 9 | 10 | 8 |
+| alt isoforms restored | 95 | 99 | 106 | 107 | 277 |
+| correct models, chain changed (of 272) | 72 | 74 | 82 | 8 | |
+| added/changed multi-exon (in GENCODE) | 627 (194) | 639 (201) | 754 (284) | 687 (267) | |
+
+Perl's assembler re-merges the isoforms (4,620 in, 3,690 assemblies), which costs alt
+isoforms; the update rules agree closely. Run time ~2 h per Perl run (4 CPUs) vs ~1 min
+for PASA-XG's update stage.
+
+Raw reads as Perl input (chr22:42-45 Mb, 83,553 reads all flagged FL) restore almost
+nothing. Launch_PASA_pipeline.pl's 500 kb max intron admitted ~99 spurious 200-470 kb
+introns; with 100 kb, readthrough reads still chain neighbours (19 reads join PARVB
+and PARVG into one 630-read assembly), and the 40% coding check rejects most assemblies.

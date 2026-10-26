@@ -337,5 +337,17 @@ Results are not expected to match Perl PASA. The checks are:
    strands from `ts` on its own (§2).
 7. Benchmark: human with PacBio and ONT, Arabidopsis, Trinity assemblies (§11).
 
+Decisions (2026-10-26):
+
+8. LRAA `pasa_mode_v2` merged into `devel` (2a6524d) after review.
+9. TransDecoder decides complete vs partial ORFs; no start-codon override. 5'-partial
+   isoforms take PASA's non-FL (EST) path.
+10. Supported-model protection stays on by default (`--replace_supported_models` for
+    PASA's behavior).
+11. `MIN_PERCENT_PROT_CODING` stays at 40% (conservative), plus the NMD-target rule:
+    no update may yield a stop codon > 50 nt upstream of the last exon-exon junction.
+12. PASA's `TRUST_FL_STATUS` on by default: LRAA trims isoform ends, so a compatible
+    FL isoform shorter than the model must still count as FL support.
+
 Still open: the alternative-splicing design (§7), pending your code and the alt
 TSS/polyA work.
