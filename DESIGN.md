@@ -196,7 +196,9 @@ a merge, a split); PASA's "delayed incorporation" cases become ordinary retries.
 
 **IDs.** Reference genes and transcripts keep their ids; changed models carry a
 `pasa_xg_update` attribute and the supporting isoform id. New isoforms are named
-`<gene_id>.pxg<N>`, novel genes `PXG_gene_<N>` (transcripts `PXG_gene_<N>.t<M>`).
+`<gene_id>.pxg<N>`, novel genes `PXG_gene_<N>` (transcripts `PXG_gene_<N>.t<M>`). A merge keeps the leftmost
+gene's ids (attribute `merged_from`); a split keeps the original ids for its first
+product and names the others `PXG_gene_<N>` (attribute `split_from`).
 
 ## 6. Gene models from isoforms
 

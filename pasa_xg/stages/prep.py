@@ -13,7 +13,7 @@ from ..annot_check import check_annotation
 from ..config import Settings
 from ..genome import Genome
 from ..gff import read_annotation, write_gtf
-from ..runner import Run, run_cmd
+from ..runner import Run, code_digest, run_cmd
 
 log = logging.getLogger("pasa_xg")
 
@@ -33,7 +33,7 @@ def link_genome(s: Settings, d: str) -> str:
 
 def run(run: Run, s: Settings) -> Dict[str, Any]:
     inputs = {"genome": s.genome, "annotation": s.annotation, "code": s.genetic_code,
-              "align": bool(s.reads), "stage": "prep/1"}
+              "align": bool(s.reads), "stage": "prep/1", "src": code_digest("pasa_xg.stages.prep", "pasa_xg.annot_check", "pasa_xg.gff", "pasa_xg.models")}
 
     def body(d: str) -> Dict[str, Any]:
         out: Dict[str, Any] = {"genome_path": link_genome(s, d)}

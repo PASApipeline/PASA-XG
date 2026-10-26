@@ -7,11 +7,11 @@ from typing import Any, Dict, Optional
 
 from .config import Settings
 from .runner import Run
-from .stages import align, assemble, coding, gene_models, isoforms, prep
+from .stages import align, assemble, coding, gene_models, isoforms, prep, report
 
 log = logging.getLogger("pasa_xg")
 
-STAGES = ["prep", "align", "assemble", "isoforms", "coding", "annot_update", "gene_models"]
+STAGES = ["prep", "align", "assemble", "isoforms", "coding", "annot_update", "gene_models", "report"]
 
 
 def run_all(s: Settings, force_from: Optional[str] = None, stop_after: Optional[str] = None) -> Dict[str, Any]:
@@ -46,4 +46,7 @@ def run_all(s: Settings, force_from: Optional[str] = None, stop_after: Optional[
     if done("annot_update"):
         return out
     out["gene_models"] = gene_models.run(run, s, out["prep"], out["coding"])
+    if done("gene_models"):
+        return out
+    report.run(run, out)  # always refreshed: it only copies files and tabulates
     return out

@@ -9,12 +9,12 @@ from .. import isoforms as iso_mod
 from ..config import Settings
 from ..genome import Genome
 from ..gff import write_fasta
-from ..runner import Run
+from ..runner import Run, code_digest
 
 
 def run(run: Run, s: Settings, prep: Dict[str, Any], asm: Dict[str, Any]) -> Dict[str, Any]:
     inputs = {"gtf": asm["gtf_path"], "expr": asm["expr_path"], "genome": prep["genome_path"],
-              "stage": "isoforms/1"}
+              "stage": "isoforms/1", "src": code_digest("pasa_xg.stages.isoforms", "pasa_xg.isoforms", "pasa_xg.gff")}
 
     def body(d: str) -> Dict[str, Any]:
         isos = iso_mod.load_lraa(asm["gtf_path"], asm["expr_path"])

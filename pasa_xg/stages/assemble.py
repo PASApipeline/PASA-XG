@@ -8,7 +8,7 @@ import shlex
 from typing import Any, Dict
 
 from ..config import Settings
-from ..runner import Run, run_cmd, tool_version
+from ..runner import Run, code_digest, run_cmd, tool_version
 
 
 def _one(d: str, pattern: str) -> str:
@@ -23,7 +23,7 @@ def run(run: Run, s: Settings, prep: Dict[str, Any], align: Dict[str, Any]) -> D
     version = tool_version([*lraa, "--version"])
     inputs = {"bam": align["bam_path"], "genome": prep["genome_path"],
               "gtf": prep.get("annotation_gtf_path"), "args": s.lraa_args(),
-              "lraa": version, "stage": "assemble/1"}
+              "lraa": version, "stage": "assemble/1", "src": code_digest("pasa_xg.stages.assemble")}
 
     def body(d: str) -> Dict[str, Any]:
         cmd = [*lraa, "--genome", prep["genome_path"], "--bam", align["bam_path"],

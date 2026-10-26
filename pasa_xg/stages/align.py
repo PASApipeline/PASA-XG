@@ -7,13 +7,13 @@ import shlex
 from typing import Any, Dict
 
 from ..config import Settings
-from ..runner import Run, run_cmd
+from ..runner import Run, code_digest, run_cmd
 
 
 def run(run: Run, s: Settings, prep: Dict[str, Any]) -> Dict[str, Any]:
     inputs = {"mmi": prep.get("mmi_path"), "genome": prep["genome_path"],
               "reads": [run.fdigest(r) for r in s.reads], "bam": s.bam,
-              "args": s.minimap2_args(), "G": s.max_intron_length, "stage": "align/1"}
+              "args": s.minimap2_args(), "G": s.max_intron_length, "stage": "align/1", "src": code_digest("pasa_xg.stages.align", "pasa_xg.config")}
 
     def body(d: str) -> Dict[str, Any]:
         bam = os.path.join(d, "aligned.bam")

@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import shlex
+import shutil
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -38,6 +39,23 @@ def file_digest(path: str) -> str:
                 fh.seek(off)
                 h.update(fh.read(SAMPLE))
     return h.hexdigest()[:20]
+
+
+def code_digest(*modules: str) -> str:
+    """Digest of the named pasa_xg modules' source, so a stage reruns when the code
+    that computes it changes (subpackages: every module in them)."""
+    import importlib
+    h = hashlib.sha256()
+    for name in sorted(modules):
+        mod = importlib.import_module(name)
+        paths = [mod.__file__]
+        if hasattr(mod, "__path__"):
+            d = os.path.dirname(mod.__file__)
+            paths = sorted(os.path.join(d, f) for f in os.listdir(d) if f.endswith(".py"))
+        for path in paths:
+            with open(path, "rb") as fh:
+                h.update(fh.read())
+    return h.hexdigest()[:12]
 
 
 def digest(obj: Any) -> str:
@@ -105,8 +123,10 @@ class Run:
                 self.save_manifest()
                 return {k: (os.path.join(sdir, v) if isinstance(v, str) and k.endswith("_path") else v)
                         for k, v in done["outputs"].items()}
-        if os.path.exists(done_path):
-            os.remove(done_path)
+        # start from an empty directory: tools keep their own checkpoints (TransDecoder,
+        # LRAA) and would otherwise serve results computed from the previous inputs
+        shutil.rmtree(sdir)
+        os.makedirs(sdir)
         self._forcing = True  # everything downstream of a rerun stage reruns too
         log.info("stage %s: running", name)
         t0 = time.time()

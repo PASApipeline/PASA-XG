@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 from .. import isoforms as iso_mod
 from ..config import Settings
 from ..isoforms import Orf
-from ..runner import Run, run_cmd
+from ..runner import Run, code_digest, run_cmd
 
 # >tid.p1 GENE.x~~tid.p1  ORF type:complete (+),score=404.17 len:483 tid:410-1861(+)
 _PEP_HEADER = re.compile(
@@ -46,7 +46,7 @@ def transdecoder_bin(s: Settings, name: str) -> str:
 def run(run: Run, s: Settings, isos_out: Dict[str, Any]) -> Dict[str, Any]:
     inputs = {"isoforms": isos_out["isoforms_path"], "min_aa": s.min_orf_aa,
               "code": s.genetic_code, "pfam": s.pfam_hits, "blastp": s.blastp_hits,
-              "stage": "coding/1"}
+              "stage": "coding/1", "src": code_digest("pasa_xg.stages.coding", "pasa_xg.isoforms", "pasa_xg.models")}
 
     def body(d: str) -> Dict[str, Any]:
         logp = os.path.join(d, "transdecoder.log")

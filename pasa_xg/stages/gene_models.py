@@ -10,7 +10,7 @@ from ..config import Settings
 from ..genome import Genome, codon_table, translate
 from ..gff import write_bed, write_fasta, write_gff3
 from ..models import AnnotationSet, Gene
-from ..runner import Run
+from ..runner import Run, code_digest
 
 
 def build(isos: Dict[str, iso_mod.Isoform]) -> AnnotationSet:
@@ -30,7 +30,7 @@ def build(isos: Dict[str, iso_mod.Isoform]) -> AnnotationSet:
 
 
 def run(run: Run, s: Settings, prep: Dict[str, Any], coding: Dict[str, Any]) -> Dict[str, Any]:
-    inputs = {"isoforms": coding["isoforms_path"], "code": s.genetic_code, "stage": "gene_models/1"}
+    inputs = {"isoforms": coding["isoforms_path"], "code": s.genetic_code, "stage": "gene_models/1", "src": code_digest("pasa_xg.stages.gene_models", "pasa_xg.gff", "pasa_xg.models")}
 
     def body(d: str) -> Dict[str, Any]:
         isos = iso_mod.load(coding["isoforms_path"])
