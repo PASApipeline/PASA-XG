@@ -1,6 +1,6 @@
 # Demonstrating PASA-XG as a genome annotation tool: evaluation plan
 
-Draft, 2026-10-26. Goal: show that PASA-XG keeps a genome annotation current. It turns a
+Draft, 2026-10-26; decisions of the same day are in section 9. Goal: show that PASA-XG keeps a genome annotation current. It turns a
 draft annotation into an accurate one, and keeps improving a mature one, as transcript
 evidence accumulates: ESTs and full-length cDNAs, short-read assemblies, then long reads.
 Alternative-splicing analysis is out of scope for now.
@@ -228,13 +228,18 @@ evidence.
 
 ### E5. GENCODE-XG: a population-scale protein-coding update (C5)
 
-- **Candidates.** Isopedia can't export isoforms, so:
-  1. Run LRAA on a representative subset of Isopedia's source samples (ENCODE4 PacBio +
-     GTEx ONT + selected SRA sets; per tissue, then merged).
-  2. Query the merged GTF against the Isopedia index to get per-sample support across all
-     1,007 samples.
-  3. Keep isoforms recurrent in at least N samples or at least M tissues.
-  - Alternative: ask the Sedlazeck lab for a dump of the index's junction-chain records.
+- **Candidates.** Download the Isopedia index and extract its full set of
+  splice-junction chains (the README documents no export command, so this means reading
+  the archive or using `isopedia-tools`). Isopedia mixes good signal with a lot of noise,
+  so the filter needs its own study before we choose. Candidate criteria to explore:
+  - recurrence across samples, tissues and studies;
+  - support from both platforms (PacBio and ONT);
+  - read counts and TPM per sample;
+  - canonical splice motifs and junction support;
+  - no evidence of internal priming or a truncated 5' end;
+  - agreement with LRAA isoforms built from a subset of the source samples.
+  Isoform ends aren't stored in the index (only junction chains), so the ends come from
+  the read-end ranges Isopedia reports, or from our own LRAA runs.
 - **Update:** PASA-XG on current GENCODE (v49) with defaults (protection, 40% coding,
   NMD rule).
 - **Outputs:**
@@ -261,6 +266,9 @@ related published strategy.
 
 ## 5. Engineering prerequisites
 
+0. **Isopedia extraction:** dump the junction chains and per-sample counts from the
+   downloaded index; build a quality-feature table for the filter study in E5.
+
 1. **Chained updates.** A PASA-XG output GFF3 is the next run's `--annotation`. IDs
    already continue (`Namer` resumes `PXG_gene_<N>` / `.pxg<N>`); provenance must carry
    across runs (per-model attribute: input set, run, isoform IDs).
@@ -272,18 +280,20 @@ related published strategy.
    OMArk, protein diff vs the starting annotation, damage report, provenance summaries.
 5. **Change report:** per-gene changelog (old vs new protein, class of change, evidence).
    It is also the release note for an annotation maintainer.
-6. **Scale:** WDL on Terra for human genome-wide and E5 (UGER is off-limits; the local
-   host has 8 cores and 186 GB).
+6. **Scale:** everything runs on the local host (28 cores, about 190 GB RAM, shared with
+   jobs that mostly run niced). UGER is off-limits. The WDL stays secondary.
 
 ## 6. Compute plan
 
-| Experiment | Locally (8 cores) | Needs Terra / GPU |
-|---|---|---|
-| E0, E1, E2, E3 on Arabidopsis (135 Mb) | yes | — |
-| Human E0–E3 on 2–4 chromosomes | yes | — |
-| Human genome-wide E0–E2, E4 | slow (LRAA per tissue) | Terra preferred |
-| E5 (dozens to hundreds of samples, Isopedia queries) | no | Terra; 305 GB index storage |
-| Structure predictions (hundreds) | no | GPU |
+All local: 28 cores, about 190 GB RAM. LRAA runs per tissue and per sample are the main
+cost, and they go in parallel within that budget.
+
+- **Disk:** `/broad/hptmp` has about 990 GB free. The Isopedia index needs about 412 GB
+  (107 GB compressed plus 305 GB unpacked); delete the archive after unpacking. Keep raw
+  read sets only as long as needed.
+- **Structure predictions** need a GPU. They are limited to a few hundred case-study
+  proteins, so a GPU host or ColabFold service only at the end; ESMFold on CPU is a
+  fallback for small proteins.
 
 ## 7. Risks
 
@@ -299,10 +309,10 @@ related published strategy.
 - **Historic data availability** (dbEST, old GENCODE/TAIR releases): all public; confirm
   formats early.
 
-## 8. Phasing (suggested)
+## 8. Phasing
 
 1. **Engineering** (section 5, items 1–4), plus E0 and E1 on Arabidopsis: the first
-   whole-genome result and a cheap end-to-end shakedown.
+   whole-genome result and an end-to-end shakedown.
 2. **E3 (Arabidopsis cross-generation) and E2 (Arabidopsis tissues):** the core
    cross-generation figure.
 3. **Human E1/E2 on chromosomes locally,** then genome-wide on Terra; E4 time travel.
@@ -317,3 +327,13 @@ Possible figures:
 5. E4: curator adoption.
 6. E5: proteome expansion with validation and structures.
 7. Damage and run time (supplement or panel).
+
+## 9. Decisions (2026-10-26)
+
+1. Compute: all local on the 28-core host; no Terra for now.
+2. Arabidopsis carries the first end-to-end demonstration.
+3. Core paper: E1 (draft to current vs other tools), E3 (cross-generation), E4 (time
+   travel), E5 (GENCODE-XG proteome). E0, E2 and E6 are supporting or supplementary.
+4. Isopedia: download the index and extract all splice patterns. Selecting the best
+   subset of a noisy catalog is its own study, to be designed before choosing.
+5. Alternative-splicing analysis stays out of scope; it can be added later.
