@@ -229,3 +229,15 @@ def test_second_round_places_an_isoform_once_its_genes_are_merged(tmp_path):
     assert r1.loc["skip", "action"] == "rejected"
     assert r2.loc["skip", "action"] == "new_isoform"
     assert out["incorporated"] == 2
+
+
+def test_nmd_distance_stop_to_last_junction():
+    from pasa_xg.annot.checks import nmd_distance
+    # exons 100 + 100 + 100 bases; stop codon ends at transcript base 30 (first exon)
+    t = Transcript("t", "g", "c", "+", [(1, 100), (201, 300), (401, 500)], cds=[(10, 30)])
+    assert nmd_distance(t) == 200 - 30
+    t2 = t.copy(cds=[(10, 100), (201, 300), (401, 420)])  # stop in the last exon
+    assert nmd_distance(t2) < 0
+    m = Transcript("m", "g", "c", "-", [(1, 100), (201, 300), (401, 500)], cds=[(470, 490)])
+    assert nmd_distance(m) == 200 - 31   # minus strand: stop ends 31 bases into the transcript
+    assert nmd_distance(Transcript("s", "g", "c", "+", [(1, 500)], cds=[(10, 30)])) == 0

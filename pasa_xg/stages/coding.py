@@ -9,7 +9,6 @@ from typing import Any, Dict, Optional
 from .. import isoforms as iso_mod
 from ..config import Settings
 from ..isoforms import Orf
-from ..gff import read_fasta
 from ..runner import Run, code_digest, run_cmd
 
 # >tid.p1 GENE.x~~tid.p1  ORF type:complete (+),score=404.17 len:483 tid:410-1861(+)
@@ -40,24 +39,6 @@ def parse_pep_headers(pep_path: str) -> Dict[str, Orf]:
     return best
 
 
-def refine_start(orf: Orf, seq: str, min_aa: int) -> Orf:
-    """A 5'-partial (or internal) ORF on a full-length isoform usually means TransDecoder
-    ran the ORF off the 5' end past its real start codon (its own start refinement
-    needs a large training set). Start it at the first in-frame ATG instead, when the
-    protein keeps at least `min_aa` residues."""
-    if orf.orf_type not in ("5prime_partial", "internal"):
-        return orf
-    for pos in range(orf.t_start, orf.t_end - 2, 3):  # 1-based codon starts
-        if seq[pos - 1:pos + 2].upper() == "ATG":
-            aa = (orf.t_end - pos + 1) // 3
-            if aa < min_aa:
-                return orf
-            kind = "complete" if orf.orf_type == "5prime_partial" else "3prime_partial"
-            return Orf(orf.orf_id, kind, pos, orf.t_end, aa - (1 if kind == "complete" else 0),
-                       orf.score)
-    return orf
-
-
 def transdecoder_bin(s: Settings, name: str) -> str:
     return os.path.join(s.transdecoder_dir, name) if s.transdecoder_dir else name
 
@@ -65,7 +46,7 @@ def transdecoder_bin(s: Settings, name: str) -> str:
 def run(run: Run, s: Settings, isos_out: Dict[str, Any]) -> Dict[str, Any]:
     inputs = {"isoforms": isos_out["isoforms_path"], "min_aa": s.min_orf_aa,
               "code": s.genetic_code, "pfam": s.pfam_hits, "blastp": s.blastp_hits,
-              "stage": "coding/1", "src": code_digest("pasa_xg.stages.coding", "pasa_xg.isoforms", "pasa_xg.models")}
+              "stage": "coding/2", "src": code_digest("pasa_xg.stages.coding", "pasa_xg.isoforms", "pasa_xg.models")}
 
     def body(d: str) -> Dict[str, Any]:
         logp = os.path.join(d, "transdecoder.log")
@@ -87,12 +68,6 @@ def run(run: Run, s: Settings, isos_out: Dict[str, Any]) -> Dict[str, Any]:
             predict += ["--retain_blastp_hits", s.blastp_hits]
         run_cmd(predict, log_path=logp, cwd=d)
         orfs = parse_pep_headers(os.path.join(td, "isoforms.fa.transdecoder.pep"))
-        seqs = read_fasta(isos_out["fasta_path"])
-        refined = 0
-        for tid in list(orfs):
-            new = refine_start(orfs[tid], seqs[tid], s.min_orf_aa)
-            refined += new is not orfs[tid]
-            orfs[tid] = new
         for tid, iso in isos.items():
             orf: Optional[Orf] = orfs.get(tid)
             iso.orf = orf
@@ -101,7 +76,6 @@ def run(run: Run, s: Settings, isos_out: Dict[str, Any]) -> Dict[str, Any]:
         iso_mod.save(isos, pkl)
         iso_mod.table(isos).to_parquet(os.path.join(d, "isoforms.coding.parquet"), index=False)
         n_complete = sum(1 for i in isos.values() if i.full_length)
-        return {"isoforms_path": pkl, "with_orf": len(orfs), "complete_orfs": n_complete,
-                "starts_refined": refined}
+        return {"isoforms_path": pkl, "with_orf": len(orfs), "complete_orfs": n_complete}
 
     return run.run_stage("coding", "04_coding", inputs, body)

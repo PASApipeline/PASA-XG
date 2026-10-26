@@ -47,6 +47,9 @@ class Settings:
     # annotation update
     max_rounds: int = 3
     protect_supported_models: bool = True
+    trust_fl_status: bool = True       # PASA's --TRUST_FL_STATUS
+    reject_nmd_targets: bool = True
+    nmd_stop_to_junction: int = 50
     min_percent_coding: float = 40.0   # PASA's MIN_PERCENT_PROT_CODING
     min_fl_orf_aa: int = 0             # PASA's MIN_FL_ORF_SIZE (0: off)
     min_tpm: float = 0.0

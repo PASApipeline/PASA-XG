@@ -314,7 +314,7 @@ class RoundComparer:
                 merged = merge_compatible(m.exons, c.exons)
                 if merged is None:
                     continue
-                if c.iso.tx.start > m.start or c.iso.tx.end < m.end:
+                if (c.iso.tx.start > m.start or c.iso.tx.end < m.end) and not self.p.TRUST_FL_STATUS:
                     demote.append(c)
                     demoted_ids.add(c.id)
                     c.comment = "compatible FL isoform is extended by the gene model; treated as non-FL"

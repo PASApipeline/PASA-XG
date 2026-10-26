@@ -97,3 +97,30 @@ built for long reads, which is the case for PASA-XG.
 Fixes found by the benchmark: TransDecoder 5'-partial ORFs on full-length isoforms (now
 started at the first in-frame ATG); supported reference models no longer replaced
 (`--replace_supported_models` restores PASA's behavior).
+
+### Revision (2026-10-26): TransDecoder's ORF calls, NMD rule, TRUST_FL_STATUS
+
+- TransDecoder decides complete vs partial; the first-ATG override is gone, so a
+  5'-partial ORF takes PASA's non-FL (EST) path.
+- `REJECT_NMD_TARGETS` (default on): no update may produce a model whose stop codon lies
+  more than 50 nt upstream of its last exon-exon junction.
+- `TRUST_FL_STATUS` (PASA's `--TRUST_FL_STATUS`, default on): a compatible FL isoform
+  that the model extends past stays FL. PASA otherwise treats it as an EST, so it no
+  longer shields the model from replacement (status 8); with LRAA's trimmed ends that
+  was the cause of most damaged models (58 of 91 cases; 21 more: supporter < 40% coding).
+- Percent coding (CDS / transcript), chr22: GENCODE canonical 32% below 40% (11% below
+  20%); LRAA complete-ORF isoforms 41% below 40% (10% below 20%); NMD-biotype 69% below 40%.
+
+chr22 recovery (same LRAA assembly for all; "of" = supported by the reads):
+
+| | PASA rules | p40, PASA rules, no refine | p40 +NMD +trust_FL | same, no protection | p30 | p20 | p0 | of |
+|---|---|---|---|---|---|---|---|---|
+| deleted genes recovered | 21 | 16 | 17 | 16 | 19 | 21 | 21 | 25 |
+| UTRs restored | 45 | 46 | 45 | 46 | 45 | 47 | 47 | 41 |
+| split genes rejoined (true chain) | 7 | 9 | 10 | 9 | 11 | 11 | 11 | 8 |
+| alt isoforms restored | 96 | 106 | 107 | 102 | 112 | 113 | 114 | 277 |
+| correct models, chain changed (of 272) | 97 | 82 | 8 | 38 | 11 | 11 | 11 | |
+| added/changed multi-exon (in GENCODE) | 742 (309) | 754 (284) | 687 (267) | 673 (270) | 762 (296) | 816 (314) | 851 (324) | |
+
+p30/p20/p0 columns: NMD + trust_FL + protection on. ("PASA rules" = the earlier run with
+first-ATG starts.)

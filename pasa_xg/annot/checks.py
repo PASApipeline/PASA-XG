@@ -32,6 +32,13 @@ class Params:
     # (PASA status 8) or restitched (16); the new structure becomes an alternative
     # isoform instead. False restores PASA's behavior.
     PROTECT_SUPPORTED_MODELS: bool = True
+    # PASA's --TRUST_FL_STATUS: a compatible full-length isoform that the model extends
+    # past is still full-length (LRAA trims isoform ends), not demoted to an EST.
+    TRUST_FL_STATUS: bool = False
+    # PASA-XG: no update may produce a model whose stop codon lies more than
+    # NMD_STOP_TO_JUNCTION bases upstream of its last exon-exon junction.
+    REJECT_NMD_TARGETS: bool = False
+    NMD_STOP_TO_JUNCTION: int = 50
 
 
 CONSENSUS = {"GT..AG", "GC..AG"}
@@ -41,6 +48,23 @@ def partial_flags(t: Transcript, genome: Genome, table: Dict[str, str]) -> Tuple
     """(5' partial, 3' partial) of a coding model, read off its protein."""
     pep = genome.protein(t, table)
     return (not pep.startswith("M"), not pep.endswith("*"))
+
+
+def nmd_distance(t: Transcript) -> int:
+    """Bases from the stop codon's last base to the last exon-exon junction, along the
+    transcript (<= 0 when the stop codon is in the last exon or the model is unspliced)."""
+    if t.num_exons < 2 or not t.cds:
+        return 0
+    exons = t.exons if t.strand == "+" else t.exons[::-1]
+    stop = t.cds[-1][1] if t.strand == "+" else t.cds[0][0]
+    pos = 0
+    for a, b in exons:
+        if a <= stop <= b:
+            pos += (stop - a + 1) if t.strand == "+" else (b - stop + 1)
+            break
+        pos += b - a + 1
+    junction = t.length() - (exons[-1][1] - exons[-1][0] + 1)
+    return junction - pos
 
 
 def validate_gene(t: Transcript, genome: Genome, table: Dict[str, str], p: Params,
@@ -65,6 +89,10 @@ def validate_gene(t: Transcript, genome: Genome, table: Dict[str, str], p: Param
             errs.append("protein does not start with M")
         if not partial3 and not pep.endswith("*"):
             errs.append("protein lacks a stop codon")
+        if p.REJECT_NMD_TARGETS and pep.endswith("*"):
+            d = nmd_distance(t)
+            if d > p.NMD_STOP_TO_JUNCTION:
+                errs.append(f"NMD target: stop codon {d} bases upstream of the last splice junction")
     return errs
 
 

@@ -141,7 +141,6 @@ class Run:
         # LRAA) and would otherwise serve results computed from the previous inputs
         shutil.rmtree(sdir)
         os.makedirs(sdir)
-        self._forcing = True  # everything downstream of a rerun stage reruns too
         log.info("stage %s: running", name)
         t0 = time.time()
         self.manifest["stages"][name] = {"status": "running"}

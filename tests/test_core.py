@@ -124,8 +124,13 @@ def test_stage_checkpoint_skip_rerun_and_force(tmp_path):
     assert len(calls) == 4
     go(force="s1")  # forcing a stage reruns everything after it
     assert len(calls) == 6
+    # an upstream rerun whose output is unchanged leaves downstream stages alone
+    r = Run(str(tmp_path / "run"), {})
+    out = r.run_stage("s1", "s1", {"in": str(src), "setting": 2}, body)
+    r.run_stage("s2", "s2", {"up": out["o_path"]}, body)
+    assert len(calls) == 7
     m = json.load(open(tmp_path / "run" / "manifest.json"))
-    assert m["stages"]["s2"]["status"] == "done"
+    assert m["stages"]["s2"]["status"] == "skipped (up to date)"
 
 
 def test_five_prime_incomplete_cds_phase_is_honored(tmp_path):
@@ -142,11 +147,3 @@ def test_five_prime_incomplete_cds_phase_is_honored(tmp_path):
     write_gff3(read_annotation(str(gtf)), out)
     assert "\tCDS\t11\t20\t.\t+\t1\t" in out.getvalue()
 
-
-def test_refine_start_moves_a_5prime_partial_orf_to_its_first_atg():
-    from pasa_xg.isoforms import Orf
-    from pasa_xg.stages.coding import refine_start
-    seq = "GCTGCT" + "ATG" + "GCT" * 5 + "TAA"   # ORF runs off the 5' end from position 1
-    o = refine_start(Orf("x", "5prime_partial", 1, len(seq), 8), seq, min_aa=3)
-    assert (o.orf_type, o.t_start, o.t_end, o.aa_len) == ("complete", 7, len(seq), 6)
-    assert refine_start(Orf("x", "5prime_partial", 1, len(seq), 8), seq, min_aa=10).orf_type == "5prime_partial"

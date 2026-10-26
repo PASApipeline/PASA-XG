@@ -50,12 +50,21 @@ def _run_parser(p: argparse.ArgumentParser) -> None:
 
     u = p.add_argument_group("annotation update")
     u.add_argument("--max_rounds", type=int, default=3)
+    u.add_argument("--allow_nmd_targets", dest="reject_nmd_targets", action="store_false",
+                   help="let updates produce models that look like NMD targets. By default "
+                        "a model whose stop codon lies more than --nmd_stop_to_junction "
+                        "bases upstream of its last splice junction is rejected.")
+    u.add_argument("--nmd_stop_to_junction", type=int, default=50)
     u.add_argument("--min_percent_coding", type=float, default=40.0,
                    help="full-length isoforms must be at least this %% coding (PASA's "
                         "MIN_PERCENT_PROT_CODING)")
     u.add_argument("--min_fl_orf_aa", type=int, default=0,
                    help="a full-length isoform whose protein is longer than this passes "
                         "regardless of --min_percent_coding (PASA's MIN_FL_ORF_SIZE; 0: off)")
+    u.add_argument("--no_trust_fl_status", dest="trust_fl_status", action="store_false",
+                   help="PASA's default: a compatible full-length isoform that the gene model "
+                        "extends past is treated as an EST. By default (PASA's "
+                        "--TRUST_FL_STATUS) it stays full-length, since LRAA trims isoform ends.")
     u.add_argument("--replace_supported_models", dest="protect_supported_models",
                    action="store_false",
                    help="PASA's behavior: let an incompatible isoform replace (or be stitched "
