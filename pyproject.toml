@@ -9,7 +9,7 @@ description = "PASA-XG: transcript-evidence genome annotation across sequencing 
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "BSD-3-Clause"}
-dependencies = ["pysam>=0.21", "pandas>=1.5", "pyarrow>=10"]
+dependencies = ["pysam>=0.21", "pandas>=1.5", "pyarrow>=10", "biopython>=1.80"]
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
