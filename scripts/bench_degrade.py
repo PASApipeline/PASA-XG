@@ -13,7 +13,13 @@ known damage applied to a random subset of genes:
 
 Writes <out>.degraded.gtf, <out>.truth.gtf and <out>.damage.tsv (gene, damage).
 
-usage: bench_degrade.py gencode.gtf out_prefix [--seed 1] [--deleted 0.1] [--utr_trim 0.2] [--split 0.05]
+usage: bench_degrade.py annotation out_prefix [--canonical gencode|first|longest_cds]
+                        [--seed 1] [--deleted 0.1] [--utr_trim 0.2] [--split 0.05]
+
+--canonical gencode (default): GENCODE GTF, protein_coding genes, Ensembl_canonical model.
+--canonical first: any GTF/GFF3 (e.g. Araport11), genes with a coding model; canonical =
+    the first coding model by ID (AT1G01010.1-style representative models).
+--canonical longest_cds: as `first`, canonical = the model with the longest CDS.
 """
 
 import argparse
@@ -21,7 +27,7 @@ import random
 import re
 from collections import defaultdict
 
-from pasa_xg.gff import write_gtf
+from pasa_xg.gff import read_annotation, write_gtf
 from pasa_xg.models import AnnotationSet, Gene, Transcript
 
 
@@ -63,6 +69,19 @@ def parse(gtf):
     return out
 
 
+def parse_generic(path, how):
+    """Genes with at least one coding model; all their coding models, one marked canonical."""
+    out = defaultdict(list)
+    for g in read_annotation(path):
+        coding = sorted((t for t in g.transcripts.values() if t.cds), key=lambda t: t.id)
+        if not coding:
+            continue
+        canon = coding[0] if how == "first" else max(coding, key=lambda t: (t.cds_length(), t.id))
+        for t in coding:
+            out[g.id].append(t.copy(gene_id=g.id, attrs={"canonical": str(t is canon)}))
+    return out
+
+
 def _join(spans):
     o = []
     for a, b in sorted(spans):
@@ -101,13 +120,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("gtf")
     ap.add_argument("out")
+    ap.add_argument("--canonical", choices=("gencode", "first", "longest_cds"), default="gencode")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--deleted", type=float, default=0.10)
     ap.add_argument("--utr_trim", type=float, default=0.20)
     ap.add_argument("--split", type=float, default=0.05)
     a = ap.parse_args()
     rng = random.Random(a.seed)
-    genes = parse(a.gtf)
+    genes = parse(a.gtf) if a.canonical == "gencode" else parse_generic(a.gtf, a.canonical)
     truth, degraded, damage = [], [], []
     for gid in sorted(genes):
         txs = genes[gid]
