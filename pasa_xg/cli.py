@@ -71,12 +71,13 @@ def _run_parser(p: argparse.ArgumentParser) -> None:
                         "extends past is treated as an EST. By default (PASA's "
                         "--TRUST_FL_STATUS) it stays full-length, since LRAA trims isoform ends.")
     u.add_argument("--additive", action="store_true",
-                   help="for curated annotations: never replace, restitch, merge or split an "
+                   help="for curated annotations: never replace, restitch or split an "
                         "existing model, even one the reads don't support (absence of "
                         "evidence in these samples isn't evidence against it). Conflicting "
                         "structures are added as alternative isoforms or new genes; UTR "
-                        "extensions and compatible CDS refinements still apply. Default: "
-                        "PASA's behavior, which replaces unsupported models (suits drafts).")
+                        "extensions, compatible CDS refinements and guarded gene merges "
+                        "still apply. Default: PASA's behavior, which replaces unsupported "
+                        "models (suits drafts).")
     u.add_argument("--replace_supported_models", dest="protect_supported_models",
                    action="store_false",
                    help="PASA's behavior: let an incompatible isoform replace (or be stitched "

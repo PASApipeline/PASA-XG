@@ -575,9 +575,6 @@ class RoundComparer:
         """Returns isoforms whose incorporation must wait (merged genes' support)."""
         deferred: List[Cand] = []
         for c in cands:
-            if self.p.ADDITIVE:
-                c.set(30 if is_fl else 35, False, "additive update: existing genes are not merged")
-                continue
             genes = [self.ann.genes[g] for g in c.genes]
             if any(len([t for t in g.transcripts.values()]) > 1 for g in genes):
                 c.set(30 if is_fl else 35, False, "a matched gene already has alternative isoforms")

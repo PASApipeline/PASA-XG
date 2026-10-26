@@ -33,9 +33,10 @@ class Params:
     # isoform instead. False restores PASA's behavior.
     PROTECT_SUPPORTED_MODELS: bool = True
     # PASA-XG: additive update for curated annotations. No existing model is replaced,
-    # restitched, merged or split; evidence that conflicts with a model becomes an
-    # alternative isoform (or a new gene). UTR extensions and compatible CDS refinements
-    # of a model still apply.
+    # restitched or split; evidence that conflicts with a model becomes an alternative
+    # isoform (or a new gene). UTR extensions and compatible CDS refinements still apply,
+    # and genes still merge under PASA's guards (none of them has full-length support,
+    # so readthrough between expressed neighbours can't fuse them).
     ADDITIVE: bool = False
     # PASA's --TRUST_FL_STATUS: a compatible full-length isoform that the model extends
     # past is still full-length (LRAA trims isoform ends), not demoted to an EST.
