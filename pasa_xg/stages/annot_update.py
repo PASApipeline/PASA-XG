@@ -69,6 +69,8 @@ def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome,
                      "num_exons": i.tx.num_exons, "TPM": i.tpm,
                      "isoform_fraction": i.isoform_fraction, "comment": ""})
     incorporated: Set[str] = set()
+    support: Dict[str, Set[str]] = {}   # annotation transcript -> isoforms that built/confirm it
+    fl_models: Set[str] = set()         # ... of which a full-length isoform
     targets = set(eligible)
     summary = []
     current = ann
@@ -78,13 +80,18 @@ def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome,
         rdir = os.path.join(out_dir, "rounds", f"round_{rnd:02d}")
         os.makedirs(rdir, exist_ok=True)
         decisions, splits, _ = run_round(current, [eligible[k] for k in sorted(targets)],
-                                         genome, table, p)
+                                         genome, table, p, support, fl_models)
         label = f"round_{rnd:02d}"
         new, applied, changed = apply_round(current, decisions, splits, label, expression)
         newly = {d.isoform_id for d in decisions
                  if d.valid and d.action not in ("deferred", "antisense", "intergenic_noncoding")
                  and d.isoform_id in applied}
         incorporated |= newly
+        for iso_id in newly:
+            tid = applied[iso_id]
+            support.setdefault(tid, set()).add(iso_id)
+            if isos[iso_id].full_length:
+                fl_models.add(tid)
         rrows = _rows(decisions, applied, rnd, isos)
         rows += rrows
         pd.DataFrame(rrows).to_csv(os.path.join(rdir, "decisions.tsv"), sep="\t", index=False)

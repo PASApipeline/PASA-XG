@@ -147,10 +147,18 @@ class Decision:
 
 
 class RoundComparer:
-    def __init__(self, ann: AnnotationSet, genome: Genome, table: Dict[str, str], p: C.Params) -> None:
+    def __init__(self, ann: AnnotationSet, genome: Genome, table: Dict[str, str], p: C.Params,
+                 prior_support: Optional[Dict[str, Set[str]]] = None,
+                 prior_fl_models: Optional[Set[str]] = None) -> None:
+        """`prior_support` / `prior_fl_models`: models built or confirmed by isoforms in
+        earlier rounds. PASA forgets these between runs, so a later run may overwrite a
+        model an earlier one built from a full-length transcript; rounds remember."""
         self.ann, self.genome, self.table, self.p = ann, genome, table, p
-        self.models_unavail: Set[str] = set()                       # FL-updated models
-        self.model_support: Dict[str, Set[str]] = defaultdict(set)  # model -> incorporated isoforms
+        self.prior_fl_models: Set[str] = set(prior_fl_models or ())
+        self.models_unavail: Set[str] = set(self.prior_fl_models)    # FL-updated models
+        self.model_support: Dict[str, Set[str]] = defaultdict(set)   # model -> incorporated isoforms
+        for mid, isos in (prior_support or {}).items():
+            self.model_support[mid] |= set(isos)
         self.merged_models: Set[str] = set()
         self.novel_by_iso: Dict[str, str] = {}
         self.novel_fl: Dict[str, List[Cand]] = defaultdict(list)     # group -> novel FL cands
@@ -314,7 +322,8 @@ class RoundComparer:
                 if ok:
                     c.updated = mg
         trying = [c for c in valid if c.id not in demoted_ids]
-        updated: Set[str] = set()
+        # models built from full-length isoforms in earlier rounds are not replaced
+        updated: Set[str] = {m.id for m in models if m.id in self.prior_fl_models}
         # compatible updates
         for c in trying:
             mid = cand_to_model.get(c.id)
@@ -565,8 +574,8 @@ class RoundComparer:
             if any(not m.cds for m in models):
                 c.set(30 if is_fl else 35, False, "a matched gene is noncoding")
                 continue
-            if any(self.model_support.get(m.id) and any(x in self.validating_fl for x in self.model_support[m.id])
-                   for m in models):
+            if any(m.id in self.models_unavail or (self.model_support.get(m.id) and any(
+                    x in self.validating_fl for x in self.model_support[m.id])) for m in models):
                 c.set(30 if is_fl else 35, False, "a matched gene already has full-length support")
                 continue
             if len({g.strand for g in genes}) != 1:
@@ -682,9 +691,11 @@ def _union_exons(spans: List[Span]) -> List[Span]:
 
 
 def run_round(ann: AnnotationSet, isoforms: List[Isoform], genome: Genome, table: Dict[str, str],
-              p: C.Params) -> Tuple[List[Decision], List[Tuple[str, List[Cand]]], RoundComparer]:
+              p: C.Params, prior_support: Optional[Dict[str, Set[str]]] = None,
+              prior_fl_models: Optional[Set[str]] = None
+              ) -> Tuple[List[Decision], List[Tuple[str, List[Cand]]], RoundComparer]:
     """Compare `isoforms` with `ann`; returns decisions, approved splits and the comparer."""
-    rc = RoundComparer(ann, genome, table, p)
+    rc = RoundComparer(ann, genome, table, p, prior_support, prior_fl_models)
     groups: Dict[str, List[Cand]] = defaultdict(list)
     for iso in isoforms:
         groups[iso.tx.gene_id].append(Cand(iso, iso.tx.gene_id, fl=iso.full_length))
@@ -696,11 +707,13 @@ def run_round(ann: AnnotationSet, isoforms: List[Isoform], genome: Genome, table
         fl = [c for c in groups[g] if c.fl]
         if fl:
             nonfl[g] += rc.analyze_fl(fl)
-    multi_fl = [c for c in all_cands if c.status == 5]
+    # the most complete candidate gets the first chance to merge
+    most_complete = lambda c: (-c.iso.tx.num_exons, -(c.gene_obj or c.iso.tx).cds_length(), c.id)
+    multi_fl = sorted((c for c in all_cands if c.status == 5), key=most_complete)
     for g in order:
         if nonfl[g]:
             rc.analyze_nonfl(nonfl[g])
-    multi_nonfl = [c for c in all_cands if c.status == 11]
+    multi_nonfl = sorted((c for c in all_cands if c.status == 11), key=most_complete)
     deferred_ids = rc.analyze_multi_gene(multi_fl, True) + rc.analyze_multi_gene(multi_nonfl, False)
     rc.classify_antisense(all_cands)
     for c in all_cands:  # alternative isoforms of novel genes that turned out antisense

@@ -198,3 +198,34 @@ def test_opposite_strand_isoform_is_antisense(tmp_path):
     anti = Isoform(Transcript("anti", "L9", "c", "-", [(ex[1][0], ex[1][1])]), tpm=5)
     d, _, _ = decide(ann, [anti], g)
     assert d["anti"].action == "antisense"
+
+
+def test_second_round_places_an_isoform_once_its_genes_are_merged(tmp_path):
+    from pasa_xg.config import Settings
+    from pasa_xg.stages.annot_update import update
+    L = Locus(tmp_path)
+    L.spacer(300)
+    ex = L.gene([300, 150, 150, 300, 300])
+    g = L.genome()
+    full_t = Transcript("x", "x", "c", "+", ex)
+    cds = full_t.segments_for(*longest_orf(g.transcript_seq(full_t), TABLE))
+    genes = []
+    for gid, part in (("GA", ex[:2]), ("GB", ex[2:])):
+        t = Transcript(f"{gid}.t1", gid, "c", "+", part,
+                       [(max(a, part[0][0]), min(b, part[-1][1])) for a, b in cds
+                        if a <= part[-1][1] and b >= part[0][0]])
+        genes.append(Gene(gid, "c", "+", {t.id: t}))
+    ann = AnnotationSet(genes)
+    isos = {"span": iso("span", "L1", ex, g),
+            "skip": iso("skip", "L1", [ex[0], ex[2], ex[3], ex[4]], g)}
+    s = Settings(genome=str(tmp_path / "g.fa"), input_type="transcripts", out_dir=str(tmp_path),
+                 reads=["r.fa"])
+    out = update(ann, isos, g, s, str(tmp_path / "upd"), Params())
+    import pandas as pd
+    d = pd.read_csv(tmp_path / "upd" / "annot_update.all_rounds.tsv", sep="\t")
+    r1 = d[d["round"] == 1].set_index("isoform_id")
+    r2 = d[d["round"] == 2].set_index("isoform_id")
+    assert r1.loc["span", "action"] == "merge_genes"
+    assert r1.loc["skip", "action"] == "rejected"
+    assert r2.loc["skip", "action"] == "new_isoform"
+    assert out["incorporated"] == 2
