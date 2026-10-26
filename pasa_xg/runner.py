@@ -41,20 +41,34 @@ def file_digest(path: str) -> str:
     return h.hexdigest()[:20]
 
 
+def _read_package_sources() -> Dict[str, bytes]:
+    root = os.path.dirname(os.path.abspath(__file__))
+    out = {}
+    for d, _, files in os.walk(root):
+        for f in files:
+            if f.endswith(".py"):
+                p = os.path.join(d, f)
+                with open(p, "rb") as fh:
+                    out[os.path.relpath(p, root)] = fh.read()
+    return out
+
+
+# Read once, when the package is imported: a stage's cache key must describe the code
+# this process runs, not files edited on disk since it started.
+_SOURCES = _read_package_sources()
+
+
 def code_digest(*modules: str) -> str:
-    """Digest of the named pasa_xg modules' source, so a stage reruns when the code
-    that computes it changes (subpackages: every module in them)."""
-    import importlib
+    """Digest of the named pasa_xg modules' source (subpackages: all their modules), so
+    a stage reruns when the code that computes it changes."""
     h = hashlib.sha256()
     for name in sorted(modules):
-        mod = importlib.import_module(name)
-        paths = [mod.__file__]
-        if hasattr(mod, "__path__"):
-            d = os.path.dirname(mod.__file__)
-            paths = sorted(os.path.join(d, f) for f in os.listdir(d) if f.endswith(".py"))
-        for path in paths:
-            with open(path, "rb") as fh:
-                h.update(fh.read())
+        rel = name.split(".", 1)[1].replace(".", "/") if "." in name else ""
+        hits = sorted(k for k in _SOURCES if k == rel + ".py" or k.startswith(rel + "/"))
+        if not hits:
+            raise KeyError(f"no source for module {name}")
+        for k in hits:
+            h.update(_SOURCES[k])
     return h.hexdigest()[:12]
 
 

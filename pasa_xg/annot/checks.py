@@ -28,6 +28,10 @@ class Params:
     STOMP_HIGH_PERCENTAGE_OVERLAPPING_GENE: bool = False
     MAX_UTR_EXONS: int = 2
     ALLOW_ATAC: bool = True
+    # PASA-XG: a model whose own structure the isoforms support is never replaced
+    # (PASA status 8) or restitched (16); the new structure becomes an alternative
+    # isoform instead. False restores PASA's behavior.
+    PROTECT_SUPPORTED_MODELS: bool = True
 
 
 CONSENSUS = {"GT..AG", "GC..AG"}

@@ -50,6 +50,12 @@ def _run_parser(p: argparse.ArgumentParser) -> None:
 
     u = p.add_argument_group("annotation update")
     u.add_argument("--max_rounds", type=int, default=3)
+    u.add_argument("--replace_supported_models", dest="protect_supported_models",
+                   action="store_false",
+                   help="PASA's behavior: let an incompatible isoform replace (or be stitched "
+                        "into) a model even when other isoforms support that model's own "
+                        "structure. By default such a model is kept and the new structure "
+                        "is added as an alternative isoform.")
     u.add_argument("--min_tpm", type=float, default=0.0,
                    help="isoforms below this TPM do not update the annotation")
     u.add_argument("--min_isoform_fraction", type=float, default=0.0,

@@ -149,12 +149,15 @@ class Decision:
 class RoundComparer:
     def __init__(self, ann: AnnotationSet, genome: Genome, table: Dict[str, str], p: C.Params,
                  prior_support: Optional[Dict[str, Set[str]]] = None,
-                 prior_fl_models: Optional[Set[str]] = None) -> None:
+                 prior_fl_models: Optional[Set[str]] = None,
+                 supported_models: Optional[Set[str]] = None) -> None:
         """`prior_support` / `prior_fl_models`: models built or confirmed by isoforms in
         earlier rounds. PASA forgets these between runs, so a later run may overwrite a
         model an earlier one built from a full-length transcript; rounds remember."""
         self.ann, self.genome, self.table, self.p = ann, genome, table, p
         self.prior_fl_models: Set[str] = set(prior_fl_models or ())
+        # models whose structure some isoform supports (see Params.PROTECT_SUPPORTED_MODELS)
+        self.protected: Set[str] = set(supported_models or ()) if p.PROTECT_SUPPORTED_MODELS else set()
         self.models_unavail: Set[str] = set(self.prior_fl_models)    # FL-updated models
         self.model_support: Dict[str, Set[str]] = defaultdict(set)   # model -> incorporated isoforms
         for mid, isos in (prior_support or {}).items():
@@ -324,6 +327,7 @@ class RoundComparer:
         trying = [c for c in valid if c.id not in demoted_ids]
         # models built from full-length isoforms in earlier rounds are not replaced
         updated: Set[str] = {m.id for m in models if m.id in self.prior_fl_models}
+        protected = {m.id for m in models if m.id in self.protected}
         # compatible updates
         for c in trying:
             mid = cand_to_model.get(c.id)
@@ -340,8 +344,8 @@ class RoundComparer:
             if c.valid:
                 updated.add(mid)
                 self.model_support[mid].add(c.id)
-        # incompatible updates of models not yet updated
-        available = [m for m in models if m.id not in updated]
+        # incompatible updates of models not yet updated (nor protected)
+        available = [m for m in models if m.id not in updated and m.id not in protected]
         if available:
             for c in trying:
                 if c.status:
@@ -370,7 +374,7 @@ class RoundComparer:
                             self.model_support[m.id].add(c.id)
                             break
         # alternative isoforms, once every model is accounted for
-        if not [m for m in models if m.id not in updated]:
+        if not [m for m in models if m.id not in updated and m.id not in protected]:
             for c in trying:
                 if c.status:
                     continue
@@ -483,7 +487,10 @@ class RoundComparer:
                     templates.append((mid, st))
                     if mid in self.models_unavail:
                         have_fl_stitched = True
-                if valid and not have_fl_stitched:
+                if valid and not have_fl_stitched and mid in self.protected:
+                    needs_isoform = True
+                    msg += "; the model's own structure is supported, so this is a new isoform"
+                elif valid and not have_fl_stitched:
                     supported = [x for x in cands if merged_into.get(x.id) == mid]
                     final = st_exons
                     for x in supported:
@@ -690,12 +697,45 @@ def _union_exons(spans: List[Span]) -> List[Span]:
     return [(a, b) for a, b in out]
 
 
+def supported_models(ann: AnnotationSet, isoforms: Iterable[Isoform]) -> Set[str]:
+    """Models whose structure an isoform supports: a multi-exon model with a compatible
+    isoform sharing at least one of its introns; a single-exon model with a compatible
+    single-exon isoform."""
+    by_contig: Dict[Tuple[str, str], List[Transcript]] = defaultdict(list)
+    for i in isoforms:
+        by_contig[(i.tx.contig, i.tx.strand)].append(i.tx)
+    for v in by_contig.values():
+        v.sort(key=lambda t: t.start)
+    out: Set[str] = set()
+    for g in ann:
+        txs = by_contig.get((g.contig, g.strand), [])
+        for m in g.transcripts.values():
+            m_introns = set(m.introns())
+            for t in txs:
+                if t.start > m.end:
+                    break
+                if t.end < m.start:
+                    continue
+                if m_introns and not (m_introns & set(t.introns())):
+                    continue
+                if not m_introns and t.num_exons > 1:
+                    continue
+                if merge_compatible(m.exons, t.exons) is not None:
+                    out.add(m.id)
+                    break
+    return out
+
+
 def run_round(ann: AnnotationSet, isoforms: List[Isoform], genome: Genome, table: Dict[str, str],
               p: C.Params, prior_support: Optional[Dict[str, Set[str]]] = None,
-              prior_fl_models: Optional[Set[str]] = None
+              prior_fl_models: Optional[Set[str]] = None,
+              all_isoforms: Optional[Iterable[Isoform]] = None,
               ) -> Tuple[List[Decision], List[Tuple[str, List[Cand]]], RoundComparer]:
-    """Compare `isoforms` with `ann`; returns decisions, approved splits and the comparer."""
-    rc = RoundComparer(ann, genome, table, p, prior_support, prior_fl_models)
+    """Compare `isoforms` with `ann`; returns decisions, approved splits and the comparer.
+    Model support is judged against `all_isoforms` (default: `isoforms`)."""
+    supported = supported_models(ann, all_isoforms if all_isoforms is not None else isoforms) \
+        if p.PROTECT_SUPPORTED_MODELS else set()
+    rc = RoundComparer(ann, genome, table, p, prior_support, prior_fl_models, supported)
     groups: Dict[str, List[Cand]] = defaultdict(list)
     for iso in isoforms:
         groups[iso.tx.gene_id].append(Cand(iso, iso.tx.gene_id, fl=iso.full_length))

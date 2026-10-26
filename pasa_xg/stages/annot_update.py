@@ -80,7 +80,8 @@ def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome,
         rdir = os.path.join(out_dir, "rounds", f"round_{rnd:02d}")
         os.makedirs(rdir, exist_ok=True)
         decisions, splits, _ = run_round(current, [eligible[k] for k in sorted(targets)],
-                                         genome, table, p, support, fl_models)
+                                         genome, table, p, support, fl_models,
+                                         all_isoforms=eligible.values())
         label = f"round_{rnd:02d}"
         new, applied, changed = apply_round(current, decisions, splits, label, expression)
         newly = {d.isoform_id for d in decisions
@@ -139,13 +140,14 @@ def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome,
 
 def run(run: Run, s: Settings, prep: Dict[str, Any], coding: Dict[str, Any]) -> Dict[str, Any]:
     inputs = {"annotation": prep["annotation_models_path"], "isoforms": coding["isoforms_path"],
-              "rounds": s.max_rounds, "min_tpm": s.min_tpm, "min_frac": s.min_isoform_fraction,
+              "rounds": s.max_rounds, "protect": s.protect_supported_models, "min_tpm": s.min_tpm, "min_frac": s.min_isoform_fraction,
               "code": s.genetic_code, "stage": "annot_update/1", "src": code_digest("pasa_xg.stages.annot_update", "pasa_xg.annot", "pasa_xg.models", "pasa_xg.genome", "pasa_xg.gff")}
 
     def body(d: str) -> Dict[str, Any]:
         with open(prep["annotation_models_path"], "rb") as fh:
             ann = pickle.load(fh)
         isos = iso_mod.load(coding["isoforms_path"])
-        return update(ann, isos, Genome(prep["genome_path"]), s, d, Params())
+        return update(ann, isos, Genome(prep["genome_path"]), s, d,
+                      Params(PROTECT_SUPPORTED_MODELS=s.protect_supported_models))
 
     return run.run_stage("annot_update", "05_annot_update", inputs, body)

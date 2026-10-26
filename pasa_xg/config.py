@@ -46,6 +46,7 @@ class Settings:
     blastp_hits: Optional[str] = None
     # annotation update
     max_rounds: int = 3
+    protect_supported_models: bool = True
     min_tpm: float = 0.0
     min_isoform_fraction: float = 0.0
 
