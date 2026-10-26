@@ -140,7 +140,8 @@ def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome,
 
 def run(run: Run, s: Settings, prep: Dict[str, Any], coding: Dict[str, Any]) -> Dict[str, Any]:
     inputs = {"annotation": prep["annotation_models_path"], "isoforms": coding["isoforms_path"],
-              "rounds": s.max_rounds, "protect": s.protect_supported_models, "min_tpm": s.min_tpm, "min_frac": s.min_isoform_fraction,
+              "rounds": s.max_rounds, "protect": s.protect_supported_models,
+              "pct_coding": s.min_percent_coding, "fl_orf": s.min_fl_orf_aa, "min_tpm": s.min_tpm, "min_frac": s.min_isoform_fraction,
               "code": s.genetic_code, "stage": "annot_update/1", "src": code_digest("pasa_xg.stages.annot_update", "pasa_xg.annot", "pasa_xg.models", "pasa_xg.genome", "pasa_xg.gff")}
 
     def body(d: str) -> Dict[str, Any]:
@@ -148,6 +149,8 @@ def run(run: Run, s: Settings, prep: Dict[str, Any], coding: Dict[str, Any]) -> 
             ann = pickle.load(fh)
         isos = iso_mod.load(coding["isoforms_path"])
         return update(ann, isos, Genome(prep["genome_path"]), s, d,
-                      Params(PROTECT_SUPPORTED_MODELS=s.protect_supported_models))
+                      Params(PROTECT_SUPPORTED_MODELS=s.protect_supported_models,
+                             MIN_PERCENT_PROT_CODING=s.min_percent_coding,
+                             MIN_FL_ORF_SIZE=s.min_fl_orf_aa))
 
     return run.run_stage("annot_update", "05_annot_update", inputs, body)

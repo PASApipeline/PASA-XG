@@ -50,6 +50,12 @@ def _run_parser(p: argparse.ArgumentParser) -> None:
 
     u = p.add_argument_group("annotation update")
     u.add_argument("--max_rounds", type=int, default=3)
+    u.add_argument("--min_percent_coding", type=float, default=40.0,
+                   help="full-length isoforms must be at least this %% coding (PASA's "
+                        "MIN_PERCENT_PROT_CODING)")
+    u.add_argument("--min_fl_orf_aa", type=int, default=0,
+                   help="a full-length isoform whose protein is longer than this passes "
+                        "regardless of --min_percent_coding (PASA's MIN_FL_ORF_SIZE; 0: off)")
     u.add_argument("--replace_supported_models", dest="protect_supported_models",
                    action="store_false",
                    help="PASA's behavior: let an incompatible isoform replace (or be stitched "

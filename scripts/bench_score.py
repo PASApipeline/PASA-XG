@@ -100,8 +100,15 @@ def main(prefix, gencode, updated_p, lraa_p):
     def pct(a, b):
         return f"{100.0 * res[a] / res[b]:.0f}%" if res[b] else "-"
 
+    keys = ["deleted", "deleted.supported", "deleted.recovered",
+            "utr_trim", "utr_trim.supported", "utr_trim.any_utr", "utr_trim.both_utrs",
+            "split", "split.supported", "split.joined", "split.joined_truth_chain",
+            "alt_isoforms", "alt_isoforms.supported", "alt_isoforms.recovered",
+            "untouched_models", "untouched_models.chain_changed", "untouched_models.cds_changed",
+            "untouched_models.removed",
+            "added_or_changed", "added_or_changed.multi_exon", "added_or_changed.multi_exon.in_gencode"]
     print(f"{'measure':42s} {'count':>7s}  of")
-    for k in sorted(res):
+    for k in keys:
         base = k.rsplit(".", 1)[0] if "." in k else None
         print(f"{k:42s} {res[k]:7d}  {pct(k, base) if base else ''}")
 
