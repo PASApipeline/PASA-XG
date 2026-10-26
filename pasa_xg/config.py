@@ -50,6 +50,7 @@ class Settings:
     max_rounds: int = 3
     run_label: str = ""                # recorded in pasa_xg_history (default: out dir name)
     protect_supported_models: bool = True
+    additive: bool = False             # never replace, merge or split existing models
     trust_fl_status: bool = True       # PASA's --TRUST_FL_STATUS
     reject_nmd_targets: bool = True
     nmd_stop_to_junction: int = 50

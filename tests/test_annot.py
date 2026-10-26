@@ -269,3 +269,19 @@ def test_update_history_accumulates_across_chained_runs(tmp_path):
     assert t.exons == ex
     assert t.attrs["pasa_xg_history"] == "gen2/round_01:utr_update:five,gen3/round_01:utr_update:full"
     assert t.attrs["pasa_xg_run"] == "gen3"
+
+
+def test_additive_mode_keeps_an_unsupported_model(tmp_path):
+    L = Locus(tmp_path)
+    L.spacer(300)
+    ex = L.gene([300, 150, 150, 300])
+    g = L.genome()
+    skip_model = AnnotationSet([model("G1", [ex[0], ex[2], ex[3]], g)])  # no read shows it
+    full = iso("full", "L1", ex, g)
+    d, decisions, splits = decide(skip_model, [full], g)
+    assert d["full"].action == "protein_update" and d["full"].status == 8   # PASA: replaced
+    d, decisions, splits = decide(skip_model, [full], g, Params(ADDITIVE=True))
+    assert d["full"].action == "new_isoform"
+    new, _, _ = apply_round(skip_model, decisions, splits, "r1", {})
+    tx = new.genes["G1"].transcripts
+    assert tx["G1.t1"].exons == [ex[0], ex[2], ex[3]] and len(tx) == 2

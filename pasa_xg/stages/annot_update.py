@@ -140,7 +140,7 @@ def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome,
 
 def run(run: Run, s: Settings, prep: Dict[str, Any], coding: Dict[str, Any]) -> Dict[str, Any]:
     inputs = {"annotation": prep["annotation_models_path"], "isoforms": coding["isoforms_path"],
-              "rounds": s.max_rounds, "run_label": s.run_label, "protect": s.protect_supported_models,
+              "rounds": s.max_rounds, "run_label": s.run_label, "protect": s.protect_supported_models, "additive": s.additive,
               "trust_fl": s.trust_fl_status, "nmd": (s.reject_nmd_targets, s.nmd_stop_to_junction),
               "pct_coding": s.min_percent_coding, "fl_orf": s.min_fl_orf_aa, "min_tpm": s.min_tpm, "min_frac": s.min_isoform_fraction,
               "code": s.genetic_code, "stage": "annot_update/1", "src": code_digest("pasa_xg.stages.annot_update", "pasa_xg.annot", "pasa_xg.models", "pasa_xg.genome", "pasa_xg.gff")}
@@ -151,6 +151,7 @@ def run(run: Run, s: Settings, prep: Dict[str, Any], coding: Dict[str, Any]) -> 
         isos = iso_mod.load(coding["isoforms_path"])
         return update(ann, isos, Genome(prep["genome_path"]), s, d,
                       Params(PROTECT_SUPPORTED_MODELS=s.protect_supported_models,
+                             ADDITIVE=s.additive,
                              TRUST_FL_STATUS=s.trust_fl_status,
                              REJECT_NMD_TARGETS=s.reject_nmd_targets,
                              NMD_STOP_TO_JUNCTION=s.nmd_stop_to_junction,

@@ -158,6 +158,8 @@ class RoundComparer:
         self.prior_fl_models: Set[str] = set(prior_fl_models or ())
         # models whose structure some isoform supports (see Params.PROTECT_SUPPORTED_MODELS)
         self.protected: Set[str] = set(supported_models or ()) if p.PROTECT_SUPPORTED_MODELS else set()
+        if p.ADDITIVE:  # every existing model is kept as is
+            self.protected |= {t.id for t in ann.transcripts()}
         self.models_unavail: Set[str] = set(self.prior_fl_models)    # FL-updated models
         self.model_support: Dict[str, Set[str]] = defaultdict(set)   # model -> incorporated isoforms
         for mid, isos in (prior_support or {}).items():
@@ -546,7 +548,7 @@ class RoundComparer:
                 ok, msg = self.stomp_ok(m, st)
                 if ok:
                     merged_into[c.id] = mid
-                    has_support = bool(self.model_support.get(mid)) or mid in fl_updated
+                    has_support = bool(self.model_support.get(mid)) or mid in fl_updated or self.p.ADDITIVE
                     if not has_support:
                         c.set(31, True, msg, model=mid, updated=st)
                         current_gene[mid], current_exons[mid] = st, st_exons
@@ -573,6 +575,9 @@ class RoundComparer:
         """Returns isoforms whose incorporation must wait (merged genes' support)."""
         deferred: List[Cand] = []
         for c in cands:
+            if self.p.ADDITIVE:
+                c.set(30 if is_fl else 35, False, "additive update: existing genes are not merged")
+                continue
             genes = [self.ann.genes[g] for g in c.genes]
             if any(len([t for t in g.transcripts.values()]) > 1 for g in genes):
                 c.set(30 if is_fl else 35, False, "a matched gene already has alternative isoforms")
@@ -656,6 +661,8 @@ class RoundComparer:
                     and len(c.genes) == 1 and c.genes[0] in self.ann.genes and not c.novel):
                 by_gene[c.genes[0]][c.group].append(c)
         splits, deferred = [], []
+        if self.p.ADDITIVE:  # existing genes are not split
+            return splits, deferred
         for gid, groups in by_gene.items():
             if len(groups) < 2:
                 continue
