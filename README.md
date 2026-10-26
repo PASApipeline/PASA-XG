@@ -7,7 +7,7 @@ minimap2 aligns, [LRAA](https://github.com/MethodsDev/LongReadAlignmentAssembler
 assembles and quantifies isoforms, TransDecoder finds coding regions, and PASA's
 annotation comparison and update logic runs on the result.
 
-Status: early development. See [DESIGN.md](DESIGN.md).
+Status: early development. See [DESIGN.md](DESIGN.md) and [STATUS.md](STATUS.md).
 
 ## Quick start
 
