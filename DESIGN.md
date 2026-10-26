@@ -190,6 +190,10 @@ a merge, a split); PASA's "delayed incorporation" cases become ordinary retries.
   every other locus would get the same answer again.
 - Stops after `--max_rounds` (default 3), or as soon as a round incorporates
   nothing new.
+- Rounds remember which isoforms built or confirmed each model. A model built from
+  a full-length isoform is not replaced by an incompatible isoform in a later round;
+  that isoform is tried as an alternative isoform instead. (Separate Perl PASA runs
+  forget this, so a second run can overwrite what the first built.)
 - Final outputs: `annotation.updated.gff3` (+ GTF, BED, cDNA/CDS/protein FASTA) and
   `annot_update.decisions.tsv` (every isoform, its final state, the round it
   happened in, the gene(s) affected, the checks, its expression).
