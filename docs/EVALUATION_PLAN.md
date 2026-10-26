@@ -288,7 +288,7 @@ related published strategy.
 All local: 28 cores, about 190 GB RAM. LRAA runs per tissue and per sample are the main
 cost, and they go in parallel within that budget.
 
-- **Disk:** `/broad/hptmp` has about 990 GB free. The Isopedia index needs about 412 GB
+- **Disk:** `/broad/hptmp` has a 3 TB quota shared with other projects (about 990 GB free on 2026-10-26). The Isopedia index needs about 412 GB
   (107 GB compressed plus 305 GB unpacked); delete the archive after unpacking. Keep raw
   read sets only as long as needed.
 - **Structure predictions** need a GPU. They are limited to a few hundred case-study
