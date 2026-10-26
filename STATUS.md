@@ -61,3 +61,39 @@ CDSs flagged, was 89).
 - Docker image and WDL: drafts in `docker/` and `WDL/`, not built or run.
 - Benchmarks (human with PacBio/ONT, Arabidopsis, Trinity).
 - Repo not yet on GitHub (`PASApipeline/PASA-XG` to be created).
+
+## Recovery benchmark: human chr22, PacBio Kinnex PBMC reads (2026-10-26)
+
+Truth: GENCODE47 chr22 protein-coding genes (428). Degraded input (scripts/bench_degrade.py,
+seed 1): canonical transcript only; 48 genes deleted, 87 cut back to their CDS, 21 split
+in two. Scored by scripts/bench_score.py ("supported" = an LRAA isoform has the truth
+structure, i.e. what the evidence allows). Data under bench/ (not in git).
+
+Whole chr22 (1.29M reads, `--bam`, 8 CPUs): 29 min, 1.35 GB peak; LRAA is 27 of the 29 min.
+
+| | PASA behavior (`--replace_supported_models`) | default | default + `--min_fl_orf_aa 100` |
+|---|---|---|---|
+| deleted genes recovered (25 supported) | 21 | 21 | 25 |
+| UTR-trimmed models regaining UTR (41 supported) | 45 | 44 | 48 |
+| split genes rejoined with truth structure (8 supported) | 7 | 8 | 9 |
+| alternative isoforms restored (277 supported) | 96 | 102 | 110 |
+| correct canonical models changed (of 272) | 97 | 13 | 29 |
+| added multi-exon structures found in GENCODE | 42% | 34% | 31% |
+
+Region chr22:42-45 Mb (83,553 reads, same reads as FASTA for both pipelines):
+
+| | Perl PASA | Perl, MIN_FL_ORF_SIZE=100 | PASA-XG | PASA-XG, --min_fl_orf_aa 100 |
+|---|---|---|---|---|
+| wall time / peak memory | 77 min / 4.3 GB | | 6 min / 1.4 GB | |
+| deleted genes recovered (3 supported) | 0 | 0 | 2 | 3 |
+| UTR-trimmed models regaining UTR (4 supported) | 0 | 0 | 4 | 4 |
+| alternative isoforms restored (16 supported) | 1 | 4 | 5 | 5 |
+| added multi-exon structures (in GENCODE) | 1 (0) | 27 (4) | 60 (13) | 86 (17) |
+
+Perl PASA (all reads marked full-length) chains long reads into very large assemblies
+(up to 839 kb) and rejects 820 of 899 for low coding fraction; PASA's assembler is not
+built for long reads, which is the case for PASA-XG.
+
+Fixes found by the benchmark: TransDecoder 5'-partial ORFs on full-length isoforms (now
+started at the first in-frame ATG); supported reference models no longer replaced
+(`--replace_supported_models` restores PASA's behavior).
