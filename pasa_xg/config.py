@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import shlex
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional
@@ -46,6 +48,7 @@ class Settings:
     blastp_hits: Optional[str] = None
     # annotation update
     max_rounds: int = 3
+    run_label: str = ""                # recorded in pasa_xg_history (default: out dir name)
     protect_supported_models: bool = True
     trust_fl_status: bool = True       # PASA's --TRUST_FL_STATUS
     reject_nmd_targets: bool = True
@@ -56,6 +59,8 @@ class Settings:
     min_isoform_fraction: float = 0.0
 
     def __post_init__(self) -> None:
+        if not self.run_label:
+            self.run_label = os.path.basename(os.path.normpath(self.out_dir))
         if self.input_type not in INPUT_TYPES:
             raise ValueError(f"--input_type must be one of {', '.join(INPUT_TYPES)}")
         if bool(self.reads) == bool(self.bam):

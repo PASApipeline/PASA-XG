@@ -83,7 +83,7 @@ def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome,
                                          genome, table, p, support, fl_models,
                                          all_isoforms=eligible.values())
         label = f"round_{rnd:02d}"
-        new, applied, changed = apply_round(current, decisions, splits, label, expression)
+        new, applied, changed = apply_round(current, decisions, splits, label, expression, s.run_label)
         newly = {d.isoform_id for d in decisions
                  if d.valid and d.action not in ("deferred", "antisense", "intergenic_noncoding")
                  and d.isoform_id in applied}
@@ -140,7 +140,7 @@ def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome,
 
 def run(run: Run, s: Settings, prep: Dict[str, Any], coding: Dict[str, Any]) -> Dict[str, Any]:
     inputs = {"annotation": prep["annotation_models_path"], "isoforms": coding["isoforms_path"],
-              "rounds": s.max_rounds, "protect": s.protect_supported_models,
+              "rounds": s.max_rounds, "run_label": s.run_label, "protect": s.protect_supported_models,
               "trust_fl": s.trust_fl_status, "nmd": (s.reject_nmd_targets, s.nmd_stop_to_junction),
               "pct_coding": s.min_percent_coding, "fl_orf": s.min_fl_orf_aa, "min_tpm": s.min_tpm, "min_frac": s.min_isoform_fraction,
               "code": s.genetic_code, "stage": "annot_update/1", "src": code_digest("pasa_xg.stages.annot_update", "pasa_xg.annot", "pasa_xg.models", "pasa_xg.genome", "pasa_xg.gff")}

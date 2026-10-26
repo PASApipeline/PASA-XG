@@ -50,6 +50,11 @@ def _run_parser(p: argparse.ArgumentParser) -> None:
 
     u = p.add_argument_group("annotation update")
     u.add_argument("--max_rounds", type=int, default=3)
+    u.add_argument("--run_label", default="",
+                   help="name of this update, recorded in each changed model's "
+                        "pasa_xg_history (default: the --out directory name). Feed this "
+                        "run's annotation.updated.gff3 to a later run as --annotation to "
+                        "keep updating it; histories accumulate.")
     u.add_argument("--allow_nmd_targets", dest="reject_nmd_targets", action="store_false",
                    help="let updates produce models that look like NMD targets. By default "
                         "a model whose stop codon lies more than --nmd_stop_to_junction "

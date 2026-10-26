@@ -48,9 +48,12 @@ def _same_structure(a: Transcript, b: Transcript) -> bool:
 
 
 def apply_round(ann: AnnotationSet, decisions: List[Decision], splits, label: str,
-                expression: Dict[str, Dict[str, float]]) -> Tuple[AnnotationSet, Dict[str, str], Set[str]]:
+                expression: Dict[str, Dict[str, float]], run_label: str = ""
+                ) -> Tuple[AnnotationSet, Dict[str, str], Set[str]]:
     """Returns (new annotation, isoform id -> annotation transcript id it produced or
-    matched, ids of genes changed or created)."""
+    matched, ids of genes changed or created). Changed models record the latest update
+    (pasa_xg_update/round/isoform) and append it to pasa_xg_history, which carries over
+    when a later run (`run_label`) updates the output again."""
     new = ann.copy(label=label)
     namer = Namer(new)
     gene_of = _gene_of_model(new)
@@ -60,8 +63,12 @@ def apply_round(ann: AnnotationSet, decisions: List[Decision], splits, label: st
 
     def tag(t: Transcript, d: Decision, kind: str) -> None:
         e = expression.get(d.isoform_id, {})
+        event = f"{run_label + '/' if run_label else ''}{label}:{kind}:{d.isoform_id}"
+        prev = t.attrs.get("pasa_xg_history")
         t.attrs = {**t.attrs, "pasa_xg_update": kind, "pasa_xg_round": label,
                    "pasa_xg_isoform": d.isoform_id,
+                   **({"pasa_xg_run": run_label} if run_label else {}),
+                   "pasa_xg_history": f"{prev},{event}" if prev else event,
                    **({"TPM": f"{e['TPM']:.3f}"} if "TPM" in e else {})}
 
     # model updates (several isoforms may build one model's final structure)

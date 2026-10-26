@@ -241,3 +241,31 @@ def test_nmd_distance_stop_to_last_junction():
     m = Transcript("m", "g", "c", "-", [(1, 100), (201, 300), (401, 500)], cds=[(470, 490)])
     assert nmd_distance(m) == 200 - 31   # minus strand: stop ends 31 bases into the transcript
     assert nmd_distance(Transcript("s", "g", "c", "+", [(1, 500)], cds=[(10, 30)])) == 0
+
+
+def test_update_history_accumulates_across_chained_runs(tmp_path):
+    import io as _io
+    from pasa_xg.gff import read_annotation, write_gff3
+    L = Locus(tmp_path)
+    L.spacer(300)
+    ex = L.gene([300, 300, 300])
+    g = L.genome()
+    trimmed = [(ex[0][0] + 60, ex[0][1])] + ex[1:-1] + [(ex[-1][0], ex[-1][1] - 60)]
+    start = AnnotationSet([model("G1", trimmed, g)])
+    # run 1 restores the 5' end only
+    five = iso("five", "L1", ex[:-1] + [(ex[-1][0], ex[-1][1] - 60)], g)
+    _, decisions, splits = decide(start, [five], g)
+    run1, _, _ = apply_round(start, decisions, splits, "round_01", {}, run_label="gen2")
+    # hand the output to the next run through GFF3, as a chained update would
+    out = _io.StringIO()
+    write_gff3(run1, out)
+    p = tmp_path / "run1.gff3"
+    p.write_text(out.getvalue())
+    reloaded = read_annotation(str(p))
+    full = iso("full", "L1", ex, g)
+    _, decisions, splits = decide(reloaded, [full], g)
+    run2, _, _ = apply_round(reloaded, decisions, splits, "round_01", {}, run_label="gen3")
+    t = run2.genes["G1"].transcripts["G1.t1"]
+    assert t.exons == ex
+    assert t.attrs["pasa_xg_history"] == "gen2/round_01:utr_update:five,gen3/round_01:utr_update:full"
+    assert t.attrs["pasa_xg_run"] == "gen3"
