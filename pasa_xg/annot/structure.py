@@ -214,4 +214,4 @@ def gene_from_exons(exons: Sequence[Span], strand: str, contig: str, genome: Gen
 
 
 def protein_of(t: Transcript, genome: Genome, table: Dict[str, str]) -> str:
-    return translate(genome.cds_seq(t), table) if t.cds else ""
+    return genome.protein(t, table)

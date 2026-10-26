@@ -51,7 +51,7 @@ def write_annotation(ann: AnnotationSet, genome: Genome, table, prefix: str) -> 
         write_bed(ann.transcripts(), fh)
     coding = [t for t in ann.transcripts() if t.cds]
     with open(prefix + ".pep", "w") as fh:
-        write_fasta(((t.id, translate(genome.cds_seq(t), table)) for t in coding), fh)
+        write_fasta(((t.id, genome.protein(t, table)) for t in coding), fh)
 
 
 def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome, s: Settings,

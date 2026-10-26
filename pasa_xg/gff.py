@@ -59,8 +59,12 @@ def _assemble(tx_rows, gene_of, gene_attrs, tx_attrs, label) -> AnnotationSet:
                 continue
             rows["exon"] = list(rows["cds"])  # CDS-only models: exons = CDS
         gid = gene_of.get(tid, tid)
+        offset = 0
+        if rows["phase"]:  # phase of the first CDS row in transcription order
+            first = (min if strand == "+" else max)(rows["phase"], key=lambda sp: sp[0])
+            offset = rows["phase"][first]
         t = Transcript(tid, gid, contig, strand, _merge_adjacent(rows["exon"]),
-                       _merge_adjacent(rows["cds"]), tx_attrs.get(tid, {}))
+                       _merge_adjacent(rows["cds"]), tx_attrs.get(tid, {}), cds_offset=offset)
         g = genes.get(gid)
         if g is None:
             g = genes[gid] = Gene(gid, contig, strand, attrs=gene_attrs.get(gid, {}))
@@ -100,13 +104,15 @@ def _read_gtf(path: str, label: str) -> AnnotationSet:
             tid = a.get("transcript_id")
             if not tid:
                 continue
-            rows = tx_rows.setdefault(tid, {"loc": (f[0], f[6]), "exon": [], "cds": []})
+            rows = tx_rows.setdefault(tid, {"loc": (f[0], f[6]), "exon": [], "cds": [], "phase": {}})
             gene_of[tid] = a.get("gene_id", tid)
             span = (int(f[3]), int(f[4]))
             if ftype == "exon":
                 rows["exon"].append(span)
             elif ftype in ("CDS", "stop_codon"):  # GTF CDS excludes the stop codon
                 rows["cds"].append(span)
+                if ftype == "CDS" and f[7].isdigit():
+                    rows["phase"][span] = int(f[7])
             elif ftype == "transcript":
                 tx_attrs[tid] = {k: v for k, v in a.items() if k not in ("gene_id", "transcript_id")}
     return _assemble(tx_rows, gene_of, gene_attrs, tx_attrs, label)
@@ -132,7 +138,8 @@ def _read_gff3(path: str, label: str) -> AnnotationSet:
             if ftype in ("exon", "CDS", "stop_codon"):
                 for p in a.get("Parent", "").split(","):
                     if p:
-                        children[p].append(("exon" if ftype == "exon" else "cds", span))
+                        children[p].append(("exon" if ftype == "exon" else "cds", span,
+                                            int(f[7]) if ftype == "CDS" and f[7].isdigit() else None))
                 continue
             fid = a.get("ID")
             if not fid:
@@ -145,9 +152,11 @@ def _read_gff3(path: str, label: str) -> AnnotationSet:
         is_tx = ftype in TRANSCRIPT_TYPES or (fid in children and fid in parent_of)
         if not is_tx:
             continue
-        rows = {"loc": locs[fid], "exon": [], "cds": []}
-        for kind, span in children.get(fid, []):
+        rows = {"loc": locs[fid], "exon": [], "cds": [], "phase": {}}
+        for kind, span, phase in children.get(fid, []):
             rows[kind].append(span)
+            if phase is not None:
+                rows["phase"][span] = phase
         tx_rows[fid] = rows
         gid = parent_of.get(fid, fid)
         gene_of[fid] = gid

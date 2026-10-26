@@ -81,6 +81,10 @@ class Genome:
     def cds_seq(self, t: Transcript) -> str:
         return self.spliced(t.contig, t.strand, t.cds)
 
+    def protein(self, t: Transcript, table: Dict[str, str]) -> str:
+        """Translation of the CDS from its first full codon (honors cds_offset)."""
+        return translate(self.cds_seq(t)[t.cds_offset:], table) if t.cds else ""
+
     def splice_sites(self, t: Transcript) -> List[str]:
         """Donor..acceptor dinucleotides of each intron, on the transcript's strand."""
         seq = self.contig(t.contig)

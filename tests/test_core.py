@@ -126,3 +126,18 @@ def test_stage_checkpoint_skip_rerun_and_force(tmp_path):
     assert len(calls) == 6
     m = json.load(open(tmp_path / "run" / "manifest.json"))
     assert m["stages"]["s2"]["status"] == "done"
+
+
+def test_five_prime_incomplete_cds_phase_is_honored(tmp_path):
+    # CDS starts 1 base into a codon (phase 1): the protein must start at the next base
+    fa = tmp_path / "g.fa"
+    fa.write_text(">c\n" + "C" * 10 + "A" + "ATGTTTTAA" + "C" * 10 + "\n")
+    gtf = tmp_path / "a.gtf"
+    gtf.write_text('c\ts\texon\t1\t30\t.\t+\t.\tgene_id "G"; transcript_id "T";\n'
+                   'c\ts\tCDS\t11\t20\t.\t+\t1\tgene_id "G"; transcript_id "T";\n')
+    t = next(read_annotation(str(gtf)).transcripts())
+    assert t.cds_offset == 1 and t.cds_phases() == [1]
+    assert Genome(str(fa)).protein(t, codon_table()) == "MF*"
+    out = io.StringIO()
+    write_gff3(read_annotation(str(gtf)), out)
+    assert "\tCDS\t11\t20\t.\t+\t1\t" in out.getvalue()

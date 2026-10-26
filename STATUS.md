@@ -36,8 +36,24 @@ Round 1 against Perl PASA's round 1 (same reads, minimap2; Perl uses its own ass
 | new or changed structures (introns + CDS) | 375 | 375 (245 identical) |
 | novel genes | 179 | 161 (121 overlap a Perl novel gene) |
 
+Final annotations (PASA-XG after 3 rounds vs Perl after its 2 rounds, as in PASA's
+sample pipeline): genes 439 vs 456; original genes changed 139 vs 131 (118 in common);
+new or changed structures 375 vs 378 (246 identical). Perl's second round mostly
+re-confirms its first (3 new structures); PASA-XG's round 2 incorporates 21 more.
+
 Disagreements inspected so far follow from different assemblies (LRAA vs PASA's
 assembler) feeding the same validation rules, not from a rule difference.
+
+Perl reference run: `PASA_port/perl_ref_annot/run_annot.sh` (needed DB_File and FASTA36
+added to `tools/perl_env`).
+
+## PacBio test (LRAA testing/single_contig: 2,507 reads, GENCODE subset of 50 genes)
+
+`--bam` input, `--input_type pacbio_hifi`: 115 isoforms; round 1 incorporates 69
+(36 protein updates, 14 new isoforms, 13 matches, 6 UTR updates), round 2 none.
+This run exposed 5'-incomplete reference CDSs (GENCODE `cds_start_NF`) being translated
+from the wrong frame; the first CDS phase is now honored everywhere (0 of 336 reference
+CDSs flagged, was 89).
 
 ## Not done yet
 

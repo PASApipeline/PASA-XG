@@ -34,7 +34,7 @@ class CdsCheck:
 
 
 def protein(t: Transcript, genome: Genome, table: Dict[str, str]) -> str:
-    return translate(genome.cds_seq(t), table)
+    return genome.protein(t, table)
 
 
 def check_transcript(t: Transcript, genome: Genome, table: Dict[str, str]) -> CdsCheck:
@@ -43,10 +43,11 @@ def check_transcript(t: Transcript, genome: Genome, table: Dict[str, str]) -> Cd
     if not t.is_coding:
         return c
     c.cds_in_exons = all(any(ea <= a and b <= eb for ea, eb in t.exons) for a, b in t.cds)
-    c.frame_ok = t.cds_length() % 3 == 0
     pep = protein(t, genome, table)
     c.has_start = pep.startswith("M")
     c.has_stop = pep.endswith("*")
+    # a 3'-incomplete CDS (no stop) need not end on a codon boundary
+    c.frame_ok = (not c.has_stop) or (t.cds_length() - t.cds_offset) % 3 == 0
     c.internal_stops = pep.rstrip("*").count("*")
     return c
 

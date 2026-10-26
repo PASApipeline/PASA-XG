@@ -35,7 +35,7 @@ CONSENSUS = {"GT..AG", "GC..AG"}
 
 def partial_flags(t: Transcript, genome: Genome, table: Dict[str, str]) -> Tuple[bool, bool]:
     """(5' partial, 3' partial) of a coding model, read off its protein."""
-    pep = translate(genome.cds_seq(t), table) if t.cds else ""
+    pep = genome.protein(t, table)
     return (not pep.startswith("M"), not pep.endswith("*"))
 
 
@@ -53,7 +53,7 @@ def validate_gene(t: Transcript, genome: Genome, table: Dict[str, str], p: Param
         errs.append("non-consensus splice sites " + ",".join(bad))
     if t.start < 1 or t.end > genome.length(t.contig):
         errs.append("extends beyond the contig")
-    pep = translate(genome.cds_seq(t), table)
+    pep = genome.protein(t, table)
     if pep.count("*") > 1:
         errs.append(f"{pep.count('*')} stops in protein")
     else:
@@ -90,8 +90,8 @@ def compare_proteins(old: Transcript, new: Transcript, genome: Genome, table: Di
                      new_partial5: bool = False, new_partial3: bool = False) -> Tuple[bool, str]:
     """PASA's compare_updated_proteins: the new model must validate, keep most of
     the old protein's length, and align to it closely."""
-    old_pep = translate(genome.cds_seq(old), table) if old.cds else ""
-    new_pep = translate(genome.cds_seq(new), table) if new.cds else ""
+    old_pep = genome.protein(old, table)
+    new_pep = genome.protein(new, table)
     if not old_pep or not new_pep:
         return False, "no protein for comparison"
     errs = validate_gene(new, genome, table, p, new_partial5, new_partial3)

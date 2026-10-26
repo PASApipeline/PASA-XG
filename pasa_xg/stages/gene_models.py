@@ -43,7 +43,7 @@ def run(run: Run, s: Settings, prep: Dict[str, Any], coding: Dict[str, Any]) -> 
         with open(os.path.join(d, "gene_models.bed"), "w") as fh:
             write_bed(models.transcripts(), fh)
         with open(os.path.join(d, "gene_models.pep"), "w") as fh:
-            write_fasta(((t.id, translate(genome.cds_seq(t), table)) for t in models.transcripts()), fh)
+            write_fasta(((t.id, genome.protein(t, table)) for t in models.transcripts()), fh)
         with open(os.path.join(d, "gene_models.cds"), "w") as fh:
             write_fasta(((t.id, genome.cds_seq(t)) for t in models.transcripts()), fh)
         n_tx = sum(len(g.transcripts) for g in models)

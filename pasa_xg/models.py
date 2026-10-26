@@ -27,6 +27,9 @@ class Transcript:
     exons: List[Span]
     cds: List[Span] = field(default_factory=list)
     attrs: Dict[str, str] = field(default_factory=dict)
+    # phase of the first CDS base in transcription order: a 5'-incomplete CDS
+    # (e.g. GENCODE cds_start_NF) begins this many bases before its first full codon
+    cds_offset: int = 0
 
     def __post_init__(self) -> None:
         if self.strand not in ("+", "-"):
@@ -75,7 +78,7 @@ class Transcript:
         order = self.cds if self.strand == "+" else list(reversed(self.cds))
         phases, done = [], 0
         for a, b in order:
-            phases.append((3 - done % 3) % 3)
+            phases.append((3 - (done - self.cds_offset) % 3) % 3)
             done += b - a + 1
         return phases if self.strand == "+" else list(reversed(phases))
 
@@ -135,7 +138,8 @@ class Transcript:
 
     def copy(self, **changes) -> "Transcript":
         d = dict(id=self.id, gene_id=self.gene_id, contig=self.contig, strand=self.strand,
-                 exons=list(self.exons), cds=list(self.cds), attrs=dict(self.attrs))
+                 exons=list(self.exons), cds=list(self.cds), attrs=dict(self.attrs),
+                 cds_offset=self.cds_offset)
         d.update(changes)
         return Transcript(**d)
 
