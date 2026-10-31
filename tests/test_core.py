@@ -147,3 +147,25 @@ def test_five_prime_incomplete_cds_phase_is_honored(tmp_path):
     write_gff3(read_annotation(str(gtf)), out)
     assert "\tCDS\t11\t20\t.\t+\t1\t" in out.getvalue()
 
+
+
+def test_isoforms_gtf_is_one_of_three_inputs():
+    from pasa_xg.config import Settings
+    Settings(genome="g", out_dir="o", isoforms_gtf="i.gtf")
+    Settings(genome="g", out_dir="o", input_type="ont", reads=["r"])
+    with pytest.raises(ValueError):
+        Settings(genome="g", out_dir="o", input_type="ont", reads=["r"], isoforms_gtf="i.gtf")
+    with pytest.raises(ValueError):
+        Settings(genome="g", out_dir="o", input_type="ont", isoforms_gtf="i.gtf")
+    with pytest.raises(ValueError):
+        Settings(genome="g", out_dir="o", reads=["r"])
+
+
+def test_load_lraa_without_quantification(tmp_path):
+    from pasa_xg.isoforms import load_lraa
+    gtf = tmp_path / "i.gtf"
+    gtf.write_text('c\tx\ttranscript\t1\t200\t.\t+\t.\tgene_id "g"; transcript_id "t"; TSS "True"; PolyA "False";\n'
+                   'c\tx\texon\t1\t50\t.\t+\t.\tgene_id "g"; transcript_id "t";\n'
+                   'c\tx\texon\t100\t200\t.\t+\t.\tgene_id "g"; transcript_id "t";\n')
+    iso = load_lraa(str(gtf), None)["t"]
+    assert iso.tss and not iso.polya and iso.tpm == 0.0 and iso.tx.num_exons == 2

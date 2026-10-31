@@ -52,9 +52,10 @@ def _bool(v: Optional[str]) -> bool:
     return str(v).lower() == "true"
 
 
-def load_lraa(gtf_path: str, expr_path: str) -> Dict[str, Isoform]:
+def load_lraa(gtf_path: str, expr_path: Optional[str]) -> Dict[str, Isoform]:
+    """expr_path None: isoforms supplied with no quantification (--isoforms_gtf)."""
     ann: AnnotationSet = read_annotation(gtf_path, label="lraa")
-    expr = pd.read_csv(expr_path, sep="\t", comment="#")
+    expr = pd.DataFrame(columns=["transcript_id"]) if expr_path is None else pd.read_csv(expr_path, sep="\t", comment="#")
     expr = expr.set_index("transcript_id")
     out: Dict[str, Isoform] = {}
     for t in ann.transcripts():
