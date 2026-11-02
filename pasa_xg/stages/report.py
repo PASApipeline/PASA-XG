@@ -24,21 +24,32 @@ DELIVERABLES = [
 ]
 
 
+def _copy(src: str, dest: str) -> None:
+    # replace, never write through: a run directory copied with hard links (cp -al)
+    # must not have its own outputs overwritten
+    if os.path.lexists(dest):
+        os.remove(dest)
+    shutil.copyfile(src, dest)
+
+
 def run(run: Run, results: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     out_dir = run.path("outputs")
     os.makedirs(out_dir, exist_ok=True)
     for sub, name, dest in DELIVERABLES:
         src = run.path(sub, name)
         if os.path.exists(src):
-            shutil.copyfile(src, os.path.join(out_dir, dest))
+            _copy(src, os.path.join(out_dir, dest))
     asm = results.get("assemble", {})
     for k in ("gtf_path", "expr_path", "tracking_path"):
         if k in asm and os.path.exists(asm[k]):
-            shutil.copyfile(asm[k], os.path.join(out_dir, os.path.basename(asm[k])))
+            _copy(asm[k], os.path.join(out_dir, os.path.basename(asm[k])))
     rows = [{"stage": stage, "metric": k, "value": v}
             for stage, o in results.items() for k, v in o.items()
             if not k.endswith("_path") and isinstance(v, (int, float, str, bool))]
-    pd.DataFrame(rows).to_csv(os.path.join(out_dir, "summary.tsv"), sep="\t", index=False)
+    summary = os.path.join(out_dir, "summary.tsv")
+    if os.path.lexists(summary):
+        os.remove(summary)
+    pd.DataFrame(rows).to_csv(summary, sep="\t", index=False)
     run.manifest["stages"]["report"] = {"status": "done"}
     run.save_manifest()
     return {"outputs_path": out_dir}

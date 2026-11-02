@@ -195,11 +195,16 @@ def write_gff3(genes: Iterable[Gene], fh: TextIO, source: str = "PASA-XG") -> No
         fh.write("\n")
 
 
+# TSS / polyA evidence carried onto GTF transcript lines (all attributes go to GFF3)
+GTF_SITE_ATTRS = ("tss_support", "polya_support", "alt_tss_sites", "alt_polya_sites")
+
+
 def write_gtf(genes: Iterable[Gene], fh: TextIO, source: str = "PASA-XG") -> None:
     for g in sorted(genes, key=lambda g: (g.contig, g.start, g.id)):
         for t in sorted(g.transcripts.values(), key=lambda t: (t.start, t.id)):
             ids = f'gene_id "{g.id}"; transcript_id "{t.id}";'
-            fh.write(f"{t.contig}\t{source}\ttranscript\t{t.start}\t{t.end}\t.\t{t.strand}\t.\t{ids}\n")
+            sites = "".join(f' {k} "{t.attrs[k]}";' for k in GTF_SITE_ATTRS if k in t.attrs)
+            fh.write(f"{t.contig}\t{source}\ttranscript\t{t.start}\t{t.end}\t.\t{t.strand}\t.\t{ids}{sites}\n")
             for a, b in t.exons:
                 fh.write(f"{t.contig}\t{source}\texon\t{a}\t{b}\t.\t{t.strand}\t.\t{ids}\n")
             for (a, b), ph in zip(t.cds, t.cds_phases()):
