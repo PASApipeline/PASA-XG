@@ -1,6 +1,6 @@
 # TSS / PolyA-aware annotation update: design draft
 
-Status: draft for review, 2026-11-02. Nothing here is implemented yet.
+Status: draft for review, 2026-11-02; revised after the user's rule on alternative ends. Nothing here is implemented yet.
 
 ## Problem
 
@@ -56,19 +56,28 @@ These are isoforms compatible with a model whose intron chain the model already 
 matches, today's statuses 3, 4, 12 and 13. Each end of the isoform is compared with the model's
 end. Within the window, it is the same end.
 
-| isoform end | model end anchored | model end not anchored |
-|---|---|---|
-| supported, beyond the model end | **new isoform** (alternative TSS / polyA) | UTR update to the isoform's end (as now) |
-| supported, inside the model end | **new isoform** (alternative TSS / polyA) | see question 2 below |
-| not supported, beyond the model end | model kept (no extension) | UTR update (as now) |
-| not supported, inside the model end | absorbed (as now) | absorbed (as now) |
+The user's rule (2026-11-02): **don't annotate a separate isoform for every alternative TSS or
+polyA.** Add one only when the current end isn't supported, or when the alternative end changes
+the protein, so that the ORF is shorter or longer than the annotated one.
 
-- An alternative-end isoform has the model's CDS with a different UTR. It passes the protein
-  check by construction, and its UTR exons still go through `check_utr_exons`.
-- Weak alternative ends: an alternative-end isoform must reach `--alt_end_min_fraction`
-  (default 0.20) of the TPM of the isoform supporting the model's end. This is LRAA's
-  degradation rule, applied to isoforms. With `--isoforms_gtf` there is no TPM, so the test is
-  skipped.
+| isoform end | protein | model end anchored | model end not anchored |
+|---|---|---|---|
+| supported, differs from the model's | same CDS | **no change**; the site is recorded on the model | **end update** to the isoform's end, either direction |
+| supported, differs from the model's | different CDS | **new isoform** (alternative TSS / polyA protein) | **end update**, as a protein update (validated as now) |
+| not supported, beyond the model end | same CDS | model kept, no extension | UTR update (as now) |
+| not supported, inside the model end | any | absorbed (as now) | absorbed (as now) |
+
+- **Different CDS:** this happens, for example, when an alternative TSS falls downstream of the
+  annotated start codon, so translation starts at a later ATG. It also happens when an
+  alternative polyA site cuts into the CDS, or adds an exon that carries a different stop. The
+  new isoform goes through the usual protein checks: percent coding, NMD and
+  `compare_proteins`.
+- **Recording sites:** an alternative site that doesn't produce an isoform isn't thrown away.
+  The model records it as `alt_tss_sites` / `alt_polya_sites`, each with its support source, so
+  the evidence stays in the annotation for later analysis. Alternative TSS and polyA analysis
+  is a downstream utility, deferred.
+- **Expression threshold:** none is needed in this design, because alternative ends no longer
+  add isoforms on their own.
 
 ### 3. Intron-chain changes, new isoforms and novel genes
 
@@ -81,14 +90,16 @@ end. Within the window, it is the same end.
 
 ### 4. De-duplication
 
-When a new isoform is added, two transcripts count as the same isoform if they have the same
-introns and CDS and both ends fall within the window. The one whose ends are supported is kept,
-or the existing one on a tie. This stops end-variants from piling up, which matters for E5,
-where merged models multiply with sample count.
+When a new isoform is added, two transcripts with the same introns and CDS count as the same
+isoform, whatever their ends. The one whose ends are supported is kept, or the existing one on
+a tie, and the other's sites go onto it as `alt_*_sites`. Section 2 keeps a separate isoform
+only when the protein differs. This also stops end-variants from piling up in E5, where merged
+models multiply with sample count.
 
 ### 5. Outputs
 
-Each transcript gets `tss_support` and `polya_support` attributes:
+Each transcript gets `tss_support` and `polya_support` attributes, plus the `alt_tss_sites` and
+`alt_polya_sites` its isoforms supported. The support attributes take these values:
 
 - `lraa`
 - `known:<bed name>`
@@ -96,14 +107,14 @@ Each transcript gets `tss_support` and `polya_support` attributes:
 - `none`
 
 Optionally it also gets the matched site coordinate. `annot_update.decisions.tsv` gains new
-action types: `alt_tss_isoform`, `alt_polya_isoform` and `end_kept_anchored`.
+action types: `alt_end_protein_isoform`, `end_update` and `alt_site_recorded`.
 
 ### 6. Defaults
 
 - **Default mode:** every rule above.
-- **`--additive`:** every reference end is anchored, so an existing end never moves. Alternative
-  ends become new isoforms, and missing UTRs are still added where the model has none at that
-  end (E0's UTR-trim case). A truncated CDS-only end, with no UTR at all, is not treated as
+- **`--additive`:** every reference end is anchored, so an existing end never moves. An
+  alternative end adds an isoform only when its protein differs. Missing UTRs are still added
+  where the model has none at that end (E0's UTR-trim case). A truncated CDS-only end, with no UTR at all, is not treated as
   anchored even under `--additive`.
 - **No sites at all:** no LRAA flags and no BEDs means today's behavior exactly, so old results
   stay reproducible.
@@ -113,14 +124,16 @@ action types: `alt_tss_isoform`, `alt_polya_isoform` and `end_kept_anchored`.
 1. **Snapping.** Should a supported end move onto the site (the LRAA node coordinate, or a CAGE
    peak's dominant position), or keep the isoform's own coordinate? The draft keeps the isoform
    coordinate and records the site in an attribute.
-2. **Shortening.** When the model end is not anchored and a FL isoform has a supported end
-   inside it, should the model be trimmed back to the site? PASA never shortens. The draft does
-   it in default mode only, never under `--additive`.
+2. **Shortening.** An end update toward a supported site can shorten the model, which PASA never
+   does. The draft allows it in default mode, where the model end is unsupported. Under
+   `--additive` no end moves.
 3. **Reference ends in default mode.** Should a reference end with no nearby site still count
    as anchored (trusting the curators), or only with evidence? The draft requires evidence in
    default mode.
-4. **Weak alternative ends.** Is 0.20 of the TPM supporting the main end a good default for
-   keeping an alternative end? LRAA uses 0.20 when calling sites from reads.
+4. **Which isoform sets the end.** When several isoforms support different sites at an
+   unanchored model end, which one updates the model? The draft uses the most-expressed
+   supported isoform. With `--isoforms_gtf` there is no TPM, so it uses the one with the most
+   source support (merge tracking count), else the outermost supported end.
 
 ## Evaluation
 
