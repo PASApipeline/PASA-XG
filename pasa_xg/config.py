@@ -30,10 +30,11 @@ INPUT_TYPES = tuple(MINIMAP2_PRESETS)
 @dataclass
 class Settings:
     genome: str
-    input_type: str
     out_dir: str
+    input_type: Optional[str] = None
     reads: List[str] = field(default_factory=list)
     bam: Optional[str] = None
+    isoforms_gtf: Optional[str] = None  # finished isoforms: skips alignment and assembly
     annotation: Optional[str] = None
     cpu: int = 4
     chain_fragments: bool = False
@@ -62,10 +63,13 @@ class Settings:
     def __post_init__(self) -> None:
         if not self.run_label:
             self.run_label = os.path.basename(os.path.normpath(self.out_dir))
-        if self.input_type not in INPUT_TYPES:
+        if sum(map(bool, (self.reads, self.bam, self.isoforms_gtf))) != 1:
+            raise ValueError("give exactly one of --reads, --bam or --isoforms_gtf")
+        if self.isoforms_gtf:
+            if self.input_type:
+                raise ValueError("--input_type does not apply to --isoforms_gtf")
+        elif self.input_type not in INPUT_TYPES:
             raise ValueError(f"--input_type must be one of {', '.join(INPUT_TYPES)}")
-        if bool(self.reads) == bool(self.bam):
-            raise ValueError("give either reads/transcripts (--reads) or an aligned --bam, not both")
 
     def minimap2_args(self) -> List[str]:
         if self.minimap2_opts:

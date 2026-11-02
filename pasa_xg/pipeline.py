@@ -26,13 +26,16 @@ def run_all(s: Settings, force_from: Optional[str] = None, stop_after: Optional[
     out["prep"] = prep.run(run, s)
     if done("prep"):
         return out
-    out["align"] = align.run(run, s, out["prep"])
-    if done("align"):
-        return out
-    out["assemble"] = assemble.run(run, s, out["prep"], out["align"])
-    if done("assemble"):
-        return out
-    out["isoforms"] = isoforms.run(run, s, out["prep"], out["assemble"])
+    if s.isoforms_gtf:  # finished isoforms stand in for assembly's output
+        asm: Dict[str, Any] = {"gtf_path": s.isoforms_gtf, "expr_path": None}
+    else:
+        out["align"] = align.run(run, s, out["prep"])
+        if done("align"):
+            return out
+        asm = out["assemble"] = assemble.run(run, s, out["prep"], out["align"])
+        if done("assemble"):
+            return out
+    out["isoforms"] = isoforms.run(run, s, out["prep"], asm)
     if done("isoforms"):
         return out
     out["coding"] = coding.run(run, s, out["isoforms"])

@@ -20,9 +20,13 @@ def _run_parser(p: argparse.ArgumentParser) -> None:
     src.add_argument("--reads", nargs="+", default=[],
                      help="reads or transcripts, FASTA or FASTQ (gzip ok), aligned with minimap2")
     src.add_argument("--bam", help="coordinate-sorted alignments instead of --reads (skips alignment)")
-    req.add_argument("--input_type", required=True, choices=INPUT_TYPES,
+    src.add_argument("--isoforms_gtf", help="finished genome-aligned isoforms (e.g. a merged catalog), used "
+                                            "as they are: skips alignment and assembly, so nothing is "
+                                            "chained. TSS and PolyA attributes are kept")
+    req.add_argument("--input_type", choices=INPUT_TYPES,
                      help="pacbio_hifi, ont, or transcripts (Trinity/StringTie assemblies, ESTs, "
-                          "cDNAs). Sets minimap2's and LRAA's options together.")
+                          "cDNAs). Sets minimap2's and LRAA's options together. Required with "
+                          "--reads or --bam.")
     req.add_argument("--annotation", help="gene annotation (GTF or GFF3). Guides LRAA; with CDS "
                                           "features it is also compared and updated.")
     req.add_argument("--out", required=True, dest="out_dir", help="run directory")
