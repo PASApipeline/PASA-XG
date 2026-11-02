@@ -85,3 +85,14 @@ def test_same_protein_end_variant_is_not_a_new_isoform(tmp_path):
     assert d["short5"].action == "new_isoform"                     # PASA: a UTR variant
     d, *_ = decide(ann, [full, short5], g)
     assert d["short5"].action == "alt_site_recorded" and d["short5"].status == 47
+
+
+def test_an_end_without_utr_is_never_anchored(tmp_path):
+    ex, _, g = _locus(tmp_path)
+    m = model("G1", ex, g)
+    t = m.transcripts["G1.t1"]
+    cds_only = [(t.cds[0][0], ex[0][1])] + ex[1:]                   # 5' UTR trimmed away
+    ann = AnnotationSet([model("G1", cds_only, g)])
+    longer = iso("longer", "L1", ex, g)
+    d, *_ = decide(ann, [longer], g, sites_for([longer]), Params(ADDITIVE=True))
+    assert d["longer"].action == "utr_update"

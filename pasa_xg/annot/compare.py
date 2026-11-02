@@ -228,7 +228,10 @@ class RoundComparer:
     # ------------------------------------------------------------ TSS / polyA ends
     def anchored(self, m: Transcript, kind: str, pos: int) -> bool:
         """A model end stays put: --additive, set by a supported isoform end this round, or
-        within the window of a known site or an LRAA-called isoform end."""
+        within the window of a known site or an LRAA-called isoform end. An end with no UTR
+        (the CDS runs to it) is a truncated model, never anchored."""
+        if m.cds and pos in (m.cds[0][0], m.cds[-1][1]):
+            return False
         if self.p.ADDITIVE or (m.id, kind) in self.anchor_set:
             return True
         return self.sites.near(m.contig, m.strand, kind, pos) is not None
