@@ -28,6 +28,22 @@ def exons_from(start: int, end: int, introns: Sequence[Span]) -> List[Span]:
     return out
 
 
+def limit_end(exons: Sequence[Span], left: bool, coord: int) -> Optional[List[Span]]:
+    """`exons` cut back so that their left (or right) end is `coord`; None when `coord`
+    is not inside an exon (the end differs by more than a terminal extension)."""
+    exons = sorted(exons)
+    if left:
+        for i, (a, b) in enumerate(exons):
+            if a <= coord <= b:
+                return [(coord, b)] + exons[i + 1:]
+    else:
+        for i in range(len(exons) - 1, -1, -1):
+            a, b = exons[i]
+            if a <= coord <= b:
+                return exons[:i] + [(a, coord)]
+    return None
+
+
 def _trim_ends(x: Sequence[Span], y_introns: Sequence[Span], fuzz: int) -> Optional[Tuple[int, int]]:
     """x's span, with a terminal exon that runs at most `fuzz` bases into one of y's
     introns trimmed back to the splice site; None if x conflicts with y's introns."""

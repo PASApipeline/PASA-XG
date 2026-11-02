@@ -59,6 +59,10 @@ class Settings:
     min_fl_orf_aa: int = 0             # PASA's MIN_FL_ORF_SIZE (0: off)
     min_tpm: float = 0.0
     min_isoform_fraction: float = 0.0
+    tss_sites: List[str] = field(default_factory=list)     # known TSS sites, BED
+    polya_sites: List[str] = field(default_factory=list)   # known polyA sites, BED
+    site_window: int = 50
+    alt_end_isoforms: str = "protein"
 
     def __post_init__(self) -> None:
         if not self.run_label:

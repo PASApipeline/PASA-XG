@@ -45,6 +45,11 @@ class Params:
     # NMD_STOP_TO_JUNCTION bases upstream of its last exon-exon junction.
     REJECT_NMD_TARGETS: bool = False
     NMD_STOP_TO_JUNCTION: int = 50
+    # PASA-XG: an isoform that differs from a model (or from another new isoform) only at
+    # its ends becomes a new isoform only when its protein differs ("protein"); with TSS /
+    # polyA sites, the ends where it differs must also be supported. "all": PASA's
+    # behavior, every such isoform that passes the protein checks is added.
+    ALT_END_ISOFORMS: str = "protein"
 
 
 CONSENSUS = {"GT..AG", "GC..AG"}

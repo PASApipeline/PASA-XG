@@ -94,6 +94,23 @@ def _run_parser(p: argparse.ArgumentParser) -> None:
     u.add_argument("--min_isoform_fraction", type=float, default=0.0,
                    help="isoforms below this fraction of their gene do not update the annotation")
 
+    t = p.add_argument_group("TSS and polyA sites (docs/TSS_POLYA_DESIGN.md)")
+    t.add_argument("--tss_sites", nargs="+", default=[],
+                   help="known TSS sites, BED with strand (e.g. FANTOM5 CAGE peaks, refTSS). "
+                        "With these, or LRAA's own TSS/PolyA calls on the isoforms, an isoform "
+                        "end only moves a model end that no site supports, and models are "
+                        "never shortened")
+    t.add_argument("--polya_sites", nargs="+", default=[],
+                   help="known polyA sites, BED with strand (e.g. PolyASite clusters)")
+    t.add_argument("--site_window", type=int, default=50,
+                   help="an end within this many bases of a site is at that site (LRAA's "
+                        "max_dist_between_alt_TSS_sites)")
+    t.add_argument("--alt_end_isoforms", choices=("protein", "all"), default="protein",
+                   help="protein: an isoform that differs from a model only at its ends is "
+                        "added only when its protein differs (and, with sites, only when those "
+                        "ends are supported); its supported ends are recorded on the model as "
+                        "alt_tss_sites / alt_polya_sites. all: PASA's behavior")
+
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="pasa-xg", description="PASA-XG: transcript-evidence "

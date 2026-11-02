@@ -22,7 +22,8 @@ from ..genome import Genome
 from ..isoforms import Isoform
 from ..models import AnnotationSet, Gene, Span, Transcript
 from . import checks as C
-from .structure import gene_from_exons, merge_compatible, stitch
+from .sites import POLYA, TSS, SiteIndex, end_of, iso_support, kind_at
+from .structure import gene_from_exons, introns_of, limit_end, merge_compatible, stitch
 
 log = logging.getLogger("pasa_xg")
 
@@ -69,6 +70,8 @@ STATUS = {
     43: "EST assembly aligns as antisense to existing annotated gene",
     44: "FL-cDNA provides alt splicing isoform of a novel gene",
     45: "fl-cdna assembly provides isoform for novel gene which overlaps existing annotations",
+    47: "assembly differs from a model only at its ends, same protein: sites recorded on the model",
+    48: "assembly differs from a model only at its ends, alternative protein from an unsupported end",
     100: "below the expression threshold",
 }
 
@@ -85,12 +88,13 @@ ACTION = {
     42: "antisense", 43: "antisense",
     19: "intergenic_noncoding",
     37: "deferred", 38: "deferred", 39: "deferred",
+    47: "alt_site_recorded",
 }
 
 
 def action_of(status: int, valid: bool) -> str:
     a = ACTION.get(status)
-    if a in ("antisense", "intergenic_noncoding", "deferred"):
+    if a in ("antisense", "intergenic_noncoding", "deferred", "alt_site_recorded"):
         return a
     if a and valid:
         return a
@@ -113,6 +117,7 @@ class Cand:
     alt_splice: bool = False
     novel: bool = False
     novel_gene: Optional[str] = None           # temporary novel gene key
+    pending_ends: list = field(default_factory=list)  # end-rule effects, kept if incorporated
 
     @property
     def id(self) -> str:
@@ -150,11 +155,16 @@ class RoundComparer:
     def __init__(self, ann: AnnotationSet, genome: Genome, table: Dict[str, str], p: C.Params,
                  prior_support: Optional[Dict[str, Set[str]]] = None,
                  prior_fl_models: Optional[Set[str]] = None,
-                 supported_models: Optional[Set[str]] = None) -> None:
+                 supported_models: Optional[Set[str]] = None,
+                 sites: Optional[SiteIndex] = None) -> None:
         """`prior_support` / `prior_fl_models`: models built or confirmed by isoforms in
         earlier rounds. PASA forgets these between runs, so a later run may overwrite a
-        model an earlier one built from a full-length transcript; rounds remember."""
+        model an earlier one built from a full-length transcript; rounds remember.
+        `sites`: TSS / polyA sites (sites.py); None or empty leaves ends to PASA's rules."""
         self.ann, self.genome, self.table, self.p = ann, genome, table, p
+        self.sites = sites if sites is not None and len(sites) else None
+        self.anchor_set: Set[Tuple[str, str]] = set()                # (model, kind) set this round
+        self.alt_sites: Dict[str, Set[Tuple[str, int, str]]] = defaultdict(set)  # model -> sites
         self.prior_fl_models: Set[str] = set(prior_fl_models or ())
         # models whose structure some isoform supports (see Params.PROTECT_SUPPORTED_MODELS)
         self.protected: Set[str] = set(supported_models or ()) if p.PROTECT_SUPPORTED_MODELS else set()
@@ -215,6 +225,102 @@ class RoundComparer:
         self._novel_counter += 1
         return f"novel_{self._novel_counter}"
 
+    # ------------------------------------------------------------ TSS / polyA ends
+    def anchored(self, m: Transcript, kind: str, pos: int) -> bool:
+        """A model end stays put: --additive, set by a supported isoform end this round, or
+        within the window of a known site or an LRAA-called isoform end."""
+        if self.p.ADDITIVE or (m.id, kind) in self.anchor_set:
+            return True
+        return self.sites.near(m.contig, m.strand, kind, pos) is not None
+
+    def end_rules(self, m: Transcript, m_exons: List[Span], c: Cand,
+                  exons: List[Span]) -> List[Span]:
+        """The merged structure `exons` of model m (current exons `m_exons`) and isoform c,
+        with the TSS / polyA rules applied at each end (TSS_POLYA_DESIGN.md section 2): an
+        anchored model end does not move, a supported isoform end past an unanchored model
+        end extends it (and anchors it), models are never shortened, and supported isoform
+        ends that leave the model as it is are recorded on it. Effects wait in
+        c.pending_ends until the isoform is incorporated (commit_ends)."""
+        c.pending_ends = []
+        if self.sites is None:
+            return exons
+        w = self.sites.window
+        for left in (True, False):
+            kind = kind_at(m.strand, left)
+            m_end, i_end = end_of(m_exons, left), end_of(c.exons, left)
+            past = (m_end - i_end) if left else (i_end - m_end)   # > 0: isoform reaches past the model
+            if abs(past) <= w:
+                continue
+            sup = iso_support(self.sites, c.iso, kind)
+            if past > 0 and not self.anchored(m, kind, m_end):
+                if sup:
+                    c.pending_ends.append(("anchor", m.id, kind, 0, ""))
+                continue
+            if past > 0:
+                cut = limit_end(exons, left, m_end)
+                exons = cut if cut is not None else exons
+            if sup:
+                c.pending_ends.append(("site", m.id, kind, i_end, sup))
+        return exons
+
+    def commit_ends(self, c: Cand) -> None:
+        for what, mid, kind, pos, src in c.pending_ends:
+            if what == "anchor":
+                self.anchor_set.add((mid, kind))
+            else:
+                self.alt_sites[mid].add((kind, pos, src))
+        c.pending_ends = []
+
+    def suppress_end_variants(self, cands: List[Cand]) -> None:
+        """ALT_END_ISOFORMS = "protein": a proposed new isoform whose introns are those of a
+        model (or of a new isoform already kept) over the span it covers, adding none, is
+        kept only when its protein differs; with sites, its differing ends must also be
+        supported. A same-protein variant records its supported ends on the model."""
+        if self.p.ALT_END_ISOFORMS == "all":
+            return
+        gene_of = {t.id: g.id for g in self.ann for t in g.transcripts.values()}
+        kept: Dict[str, List[Transcript]] = defaultdict(list)
+        alts = [c for c in cands if c.valid and ACTION.get(c.status) == "new_isoform"
+                and not c.novel and c.updated is not None and c.model in gene_of]
+        alts.sort(key=lambda c: (-c.iso.tpm, -c.updated.cds_length(), c.id))
+        w = self.sites.window if self.sites is not None else 0
+        for c in alts:
+            gid = gene_of[c.model]
+            new = c.updated
+            verdict = None
+            for r, is_model in [(m, True) for m in self.models(gid)] + [(t, False) for t in kept[gid]]:
+                merged = merge_compatible(r.exons, new.exons)
+                if merged is None or introns_of(merged) != r.introns():
+                    continue
+                differing = []
+                for left in (True, False):
+                    r_end, n_end = end_of(r.exons, left), end_of(new.exons, left)
+                    if abs(r_end - n_end) > w:
+                        kind = kind_at(r.strand, left)
+                        own = abs(n_end - end_of(c.exons, left)) <= w   # the end is the isoform's
+                        sup = iso_support(self.sites, c.iso, kind) if own else "reference"
+                        differing.append((kind, n_end, sup))
+                if new.cds == r.cds:
+                    verdict = ("same", r, is_model, differing)
+                    break
+                if self.sites is not None and not all(s for _, _, s in differing):
+                    verdict = ("unsupported", r, is_model, differing)
+                    break
+            if verdict is None:
+                kept[gid].append(new)
+                continue
+            what, r, is_model, differing = verdict
+            if what == "same":
+                c.set(47, True, f"only its ends differ from {r.id}, same protein",
+                      model=r.id if is_model else c.model, alt_splice=False)
+                if is_model:
+                    for kind, pos, sup in differing:
+                        if sup and sup != "reference":
+                            self.alt_sites[r.id].add((kind, pos, sup))
+            else:
+                c.set(48, False, f"only its ends differ from {r.id}; the protein changes at an "
+                      "end without TSS / polyA support")
+
     # ------------------------------------------------------------ FL path
     def validate_fl(self, cands: List[Cand]) -> Tuple[List[Cand], List[Cand], List[Cand]]:
         """Returns (validating, still FL, demoted to non-FL)."""
@@ -248,7 +354,9 @@ class RoundComparer:
         """FL isoforms of one group. Returns those to treat as non-FL."""
         validating, fl, demoted = self.validate_fl(cands)
         if validating:
-            validating.sort(key=lambda c: (c.gene_obj.num_exons, c.gene_obj.cds_length()), reverse=True)
+            # with sites, the most-expressed of equally complete isoforms sets a model's ends
+            validating.sort(key=lambda c: (c.gene_obj.num_exons, c.gene_obj.cds_length())
+                            + ((c.iso.tpm,) if self.sites is not None else ()), reverse=True)
             demoted += self.improve_with_fl(validating)
         novel = any(c.novel for c in validating)
         genes_text = validating[0].genes if validating else []
@@ -322,6 +430,7 @@ class RoundComparer:
                     c.comment = "compatible FL isoform is extended by the gene model; treated as non-FL"
                     continue
                 model_to_cand[m.id], cand_to_model[c.id] = c.id, m.id
+                merged = self.end_rules(m, m.exons, c, merged)
                 mg = self.gene(merged, m.strand, m.contig, (p5, p3), tid=c.id)
                 ok, _ = self.compare(m, mg, new_partials=(p5, p3))
                 if ok:
@@ -346,6 +455,7 @@ class RoundComparer:
             if c.valid:
                 updated.add(mid)
                 self.model_support[mid].add(c.id)
+                self.commit_ends(c)
         # incompatible updates of models not yet updated (nor protected)
         available = [m for m in models if m.id not in updated and m.id not in protected]
         if available:
@@ -435,15 +545,18 @@ class RoundComparer:
         current_gene: Dict[str, Transcript] = {m.id: m for m in models}
         available = [m.id for m in models if m.id not in self.models_unavail]
         fl_updated = [m.id for m in models if m.id in self.models_unavail]
+        # with sites, the most-expressed isoform sets an unanchored model end first
+        order = sorted(cands, key=lambda c: -c.iso.tpm) if self.sites is not None else cands
         for mid in available:
             m = original[mid]
             parts = self.partials(m)
-            for c in cands:
+            for c in order:
                 if c.id in merged_into:
                     continue
                 merged = merge_compatible(current_exons[mid], c.exons)
                 if merged is None:
                     continue
+                merged = self.end_rules(m, current_exons[mid], c, merged)
                 new = self.gene(merged, m.strand, m.contig, parts, tid=mid)
                 incorporated = False
                 if C.same_exons(new.exons, m.exons) and new.cds == m.cds:
@@ -460,6 +573,7 @@ class RoundComparer:
                     current_gene[mid], current_exons[mid] = new, merged
                     merged_into[c.id] = mid
                     self.model_support[mid].add(c.id)
+                    self.commit_ends(c)
                     c.set(status, True, msg, model=mid)
                 else:
                     c.set(status, False, msg, model=mid)
@@ -734,12 +848,13 @@ def run_round(ann: AnnotationSet, isoforms: List[Isoform], genome: Genome, table
               p: C.Params, prior_support: Optional[Dict[str, Set[str]]] = None,
               prior_fl_models: Optional[Set[str]] = None,
               all_isoforms: Optional[Iterable[Isoform]] = None,
+              sites: Optional[SiteIndex] = None,
               ) -> Tuple[List[Decision], List[Tuple[str, List[Cand]]], RoundComparer]:
     """Compare `isoforms` with `ann`; returns decisions, approved splits and the comparer.
     Model support is judged against `all_isoforms` (default: `isoforms`)."""
     supported = supported_models(ann, all_isoforms if all_isoforms is not None else isoforms) \
         if p.PROTECT_SUPPORTED_MODELS else set()
-    rc = RoundComparer(ann, genome, table, p, prior_support, prior_fl_models, supported)
+    rc = RoundComparer(ann, genome, table, p, prior_support, prior_fl_models, supported, sites)
     groups: Dict[str, List[Cand]] = defaultdict(list)
     for iso in isoforms:
         groups[iso.tx.gene_id].append(Cand(iso, iso.tx.gene_id, fl=iso.full_length))
@@ -763,6 +878,7 @@ def run_round(ann: AnnotationSet, isoforms: List[Isoform], genome: Genome, table
     for c in all_cands:  # alternative isoforms of novel genes that turned out antisense
         if c.novel_gene in rc.novel_turned_antisense and c.status in (27, 44):
             c.set(42 if c.fl else 43, False, "isoform of a novel gene found antisense")
+    rc.suppress_end_variants(all_cands)
     splits, split_deferred = rc.analyze_splitting(all_cands)
     by_id = {c.id: c for c in all_cands}
     for iso_id in deferred_ids:

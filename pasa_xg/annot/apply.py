@@ -47,8 +47,20 @@ def _same_structure(a: Transcript, b: Transcript) -> bool:
     return a.exons == b.exons and a.cds == b.cds
 
 
+def _add_sites(t: Transcript, sites) -> None:
+    """Alternative TSS / polyA sites an isoform supported, kept on the model as
+    alt_tss_sites / alt_polya_sites (position:source, comma-separated, accumulating)."""
+    for kind in ("tss", "polya"):
+        key = f"alt_{kind}_sites"
+        have = set(filter(None, t.attrs.get(key, "").split(",")))
+        have |= {f"{pos}:{src}" for k, pos, src in sites if k == kind}
+        if have:
+            t.attrs[key] = ",".join(sorted(have, key=lambda x: (int(x.split(":")[0]), x)))
+
+
 def apply_round(ann: AnnotationSet, decisions: List[Decision], splits, label: str,
-                expression: Dict[str, Dict[str, float]], run_label: str = ""
+                expression: Dict[str, Dict[str, float]], run_label: str = "",
+                alt_sites: Optional[Dict[str, Set[Tuple[str, int, str]]]] = None,
                 ) -> Tuple[AnnotationSet, Dict[str, str], Set[str]]:
     """Returns (new annotation, isoform id -> annotation transcript id it produced or
     matched, ids of genes changed or created). Changed models record the latest update
@@ -76,7 +88,7 @@ def apply_round(ann: AnnotationSet, decisions: List[Decision], splits, label: st
     for d in decisions:
         if d.valid and d.action in SINGLE_MODEL_UPDATES and d.model in gene_of and d.structure:
             final[d.model] = d
-        elif d.valid and d.action == "matches_existing" and d.model in gene_of:
+        elif d.valid and d.action in ("matches_existing", "alt_site_recorded") and d.model in gene_of:
             applied[d.isoform_id] = d.model
     for mid, d in final.items():
         g = new.genes[gene_of[mid]]
@@ -88,6 +100,11 @@ def apply_round(ann: AnnotationSet, decisions: List[Decision], splits, label: st
     for d in decisions:
         if d.valid and d.action in SINGLE_MODEL_UPDATES and d.model in final:
             applied[d.isoform_id] = d.model
+
+    # alternative sites recorded on models (no structural change)
+    for mid, sites in (alt_sites or {}).items():
+        if mid in gene_of and gene_of[mid] in new.genes and mid in new.genes[gene_of[mid]].transcripts:
+            _add_sites(new.genes[gene_of[mid]].transcripts[mid], sites)
 
     # splits: the first product keeps the gene and model ids
     for gid, cands in splits:

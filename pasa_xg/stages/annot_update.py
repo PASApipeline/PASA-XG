@@ -20,6 +20,7 @@ from .. import isoforms as iso_mod
 from ..annot.apply import apply_round
 from ..annot.checks import Params
 from ..annot.compare import STATUS, Decision, run_round
+from ..annot.sites import POLYA, TSS, SiteIndex, add_isoform_ends, five_prime, load_bed, three_prime
 from ..config import Settings
 from ..genome import Genome, codon_table, translate
 from ..gff import write_bed, write_fasta, write_gff3, write_gtf
@@ -54,12 +55,31 @@ def write_annotation(ann: AnnotationSet, genome: Genome, table, prefix: str) -> 
         write_fasta(((t.id, genome.protein(t, table)) for t in coding), fh)
 
 
+def site_index(s: Settings, isoforms) -> SiteIndex:
+    """Known sites from --tss_sites / --polya_sites plus the isoforms' LRAA-called ends."""
+    idx = SiteIndex(s.site_window)
+    for paths, kind in ((s.tss_sites, TSS), (s.polya_sites, POLYA)):
+        for path in paths:
+            log.info("%s sites: %d from %s", kind, load_bed(idx, path, kind), path)
+    log.info("LRAA-called isoform ends: %d", add_isoform_ends(idx, isoforms))
+    return idx
+
+
+def label_ends(ann: AnnotationSet, idx: SiteIndex) -> None:
+    """tss_support / polya_support on every transcript: the source of the closest site
+    within the window of its 5' / 3' end ('lraa', 'known:<bed>'), or 'none'."""
+    for t in ann.transcripts():
+        t.attrs["tss_support"] = idx.near(t.contig, t.strand, TSS, five_prime(t)) or "none"
+        t.attrs["polya_support"] = idx.near(t.contig, t.strand, POLYA, three_prime(t)) or "none"
+
+
 def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome, s: Settings,
            out_dir: str, p: Params) -> Dict[str, Any]:
     table = codon_table(s.genetic_code)
     expression = {k: {"TPM": v.tpm} for k, v in isos.items()}
     eligible = {k: v for k, v in isos.items()
                 if v.tpm >= s.min_tpm and v.isoform_fraction >= s.min_isoform_fraction}
+    sites = site_index(s, eligible.values())
     rows: List[Dict[str, Any]] = []
     for k in set(isos) - set(eligible):
         i = isos[k]
@@ -79,14 +99,17 @@ def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome,
             break
         rdir = os.path.join(out_dir, "rounds", f"round_{rnd:02d}")
         os.makedirs(rdir, exist_ok=True)
-        decisions, splits, _ = run_round(current, [eligible[k] for k in sorted(targets)],
-                                         genome, table, p, support, fl_models,
-                                         all_isoforms=eligible.values())
+        decisions, splits, rc = run_round(current, [eligible[k] for k in sorted(targets)],
+                                          genome, table, p, support, fl_models,
+                                          all_isoforms=eligible.values(), sites=sites)
         label = f"round_{rnd:02d}"
-        new, applied, changed = apply_round(current, decisions, splits, label, expression, s.run_label)
+        new, applied, changed = apply_round(current, decisions, splits, label, expression, s.run_label,
+                                            alt_sites=rc.alt_sites)
         newly = {d.isoform_id for d in decisions
                  if d.valid and d.action not in ("deferred", "antisense", "intergenic_noncoding")
-                 and d.isoform_id in applied}
+                 and d.action != "alt_site_recorded" and d.isoform_id in applied}
+        recorded = {d.isoform_id for d in decisions if d.valid and d.action == "alt_site_recorded"}
+        incorporated |= recorded   # evidence kept on the model; not revisited
         incorporated |= newly
         for iso_id in newly:
             tid = applied[iso_id]
@@ -131,6 +154,8 @@ def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome,
     final.to_csv(os.path.join(out_dir, "annot_update.decisions.tsv"), sep="\t", index=False)
     table_df.to_csv(os.path.join(out_dir, "annot_update.all_rounds.tsv"), sep="\t", index=False)
     pd.DataFrame(summary).to_csv(os.path.join(out_dir, "annot_update.rounds.tsv"), sep="\t", index=False)
+    if len(sites):
+        label_ends(current, sites)
     write_annotation(current, genome, table, os.path.join(out_dir, "annotation.updated"))
     with open(os.path.join(out_dir, "annotation.updated.pkl"), "wb") as fh:
         pickle.dump(current, fh)
@@ -143,7 +168,9 @@ def run(run: Run, s: Settings, prep: Dict[str, Any], coding: Dict[str, Any]) -> 
               "rounds": s.max_rounds, "run_label": s.run_label, "protect": s.protect_supported_models, "additive": s.additive,
               "trust_fl": s.trust_fl_status, "nmd": (s.reject_nmd_targets, s.nmd_stop_to_junction),
               "pct_coding": s.min_percent_coding, "fl_orf": s.min_fl_orf_aa, "min_tpm": s.min_tpm, "min_frac": s.min_isoform_fraction,
-              "code": s.genetic_code, "stage": "annot_update/1", "src": code_digest("pasa_xg.stages.annot_update", "pasa_xg.annot", "pasa_xg.models", "pasa_xg.genome", "pasa_xg.gff")}
+              "tss_sites": [run.fdigest(x) for x in s.tss_sites], "polya_sites": [run.fdigest(x) for x in s.polya_sites],
+              "site_window": s.site_window, "alt_end_isoforms": s.alt_end_isoforms,
+              "code": s.genetic_code, "stage": "annot_update/2", "src": code_digest("pasa_xg.stages.annot_update", "pasa_xg.annot", "pasa_xg.models", "pasa_xg.genome", "pasa_xg.gff")}
 
     def body(d: str) -> Dict[str, Any]:
         with open(prep["annotation_models_path"], "rb") as fh:
@@ -156,6 +183,7 @@ def run(run: Run, s: Settings, prep: Dict[str, Any], coding: Dict[str, Any]) -> 
                              REJECT_NMD_TARGETS=s.reject_nmd_targets,
                              NMD_STOP_TO_JUNCTION=s.nmd_stop_to_junction,
                              MIN_PERCENT_PROT_CODING=s.min_percent_coding,
-                             MIN_FL_ORF_SIZE=s.min_fl_orf_aa))
+                             MIN_FL_ORF_SIZE=s.min_fl_orf_aa,
+                             ALT_END_ISOFORMS=s.alt_end_isoforms))
 
     return run.run_stage("annot_update", "05_annot_update", inputs, body)
