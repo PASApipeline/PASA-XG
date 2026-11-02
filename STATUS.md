@@ -62,6 +62,16 @@ CDSs flagged, was 89).
 - Release on PyPI and/or bioconda (`pasa-xg`). Requested by the user 2026-11-02. External
   tools (minimap2, LRAA, TransDecoder, samtools) make bioconda the natural home for a full
   install; PyPI would carry the Python package alone.
+- TSS and PolyA site awareness in the annotation update (user, 2026-11-02). Sites come from two
+  sources: LRAA's own TSS/PolyA calls on its isoforms, and known sites supplied by the user
+  (e.g. CAGE peaks, PolyASite / PolyA_DB). Today the isoform table carries LRAA's TSS/PolyA flags
+  (`isoforms.py`, also read from `--isoforms_gtf`) but `annot_update` ignores them: UTR
+  extensions and end changes follow PASA's rules alone.
+- Borrow LRAA's merge rules for the update-vs-new-isoform decision (user, 2026-11-02). When an
+  isoform matches an existing model except at its ends, decide whether to update that model or
+  add a separate isoform the way LRAA's merge does (`merge_LRAA_GTFs.py`, Splice_graph): a
+  supported TSS/PolyA that differs keeps its own isoform, an unsupported end is absorbed into the
+  compatible model. Ties in with the item above.
 - Benchmarks (human with PacBio/ONT, Arabidopsis, Trinity).
 - Repo not yet on GitHub (`PASApipeline/PASA-XG` to be created).
 
