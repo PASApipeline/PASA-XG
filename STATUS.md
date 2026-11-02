@@ -55,6 +55,38 @@ This run exposed 5'-incomplete reference CDSs (GENCODE `cds_start_NF`) being tra
 from the wrong frame; the first CDS phase is now honored everywhere (0 of 336 reference
 CDSs flagged, was 89).
 
+## TSS / polyA-aware update (2026-11-02, docs/TSS_POLYA_DESIGN.md)
+
+Sites are LRAA's TSS/PolyA calls (also the tags on `--isoforms_gtf`) plus `--tss_sites` /
+`--polya_sites` BEDs, within `--site_window` 50 bp. The rules:
+- An anchored model end doesn't move. A model end is anchored if a site is nearby, and every end
+  is anchored under `--additive`; an end with no UTR is never anchored.
+- A supported isoform end extends an unanchored model end, the most-expressed isoform first.
+- Models are never shortened.
+- `--alt_end_isoforms protein` (the default): an isoform that differs from a model only at its
+  ends is added only when its protein differs. Its supported ends are recorded on the model as
+  `alt_tss_sites` / `alt_polya_sites`.
+- Every transcript gets `tss_support` / `polya_support`.
+
+**chr22 E0 benchmark** (PBMC PacBio, GENCODE 47 truth):
+- Recovery of deleted genes, UTRs, split genes and alternative isoforms is unchanged.
+- Changed models whose intron chain is in GENCODE have their 5' end within 50 bp of GENCODE's
+  73% of the time, against 70% before; 3' ends are unchanged.
+- The alternative-end rule removes about 110 same-protein end variants from the added
+  structures (706 to 597 in default mode). About 90 of those match a GENCODE transcript. This is
+  the cost of the user's rule; `--alt_end_isoforms all` restores them (704).
+
+**E5 chr22 pilot** (101-sample Isopedia merge into GENCODE v50, `--additive`, CAGE + PolyASite):
+
+| | transcripts added | added with 5' end at a site | added with 3' end at a site |
+|---|---|---|---|
+| `--alt_end_isoforms all` | 6,853 | 86% | 87% |
+| `--alt_end_isoforms protein` | 4,218 | 84% | 86% |
+| (GENCODE v50's own 15,002) | | 60% | 66% |
+
+With `protein`, 3,006 same-protein end variants were recorded on their models instead of added
+(1,326 models carry `alt_tss_sites`, 1,198 `alt_polya_sites`).
+
 ## Coding regions: pytransdecoder (2026-11-02)
 
 The coding stage runs pytransdecoder 0.2.1 (PyPI) instead of Perl TransDecoder 5.7.1, same options.
