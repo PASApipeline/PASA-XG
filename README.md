@@ -4,7 +4,7 @@ Transcript-evidence genome annotation across sequencing generations: ESTs and
 cDNAs, short-read assemblies (Trinity, StringTie) and PacBio/ONT long reads.
 A rebuild of the [PASA](https://github.com/PASApipeline/PASApipeline) pipeline:
 minimap2 aligns, [LRAA](https://github.com/MethodsDev/LongReadAlignmentAssembler)
-assembles and quantifies isoforms, TransDecoder finds coding regions, and PASA's
+assembles and quantifies isoforms, [pytransdecoder](https://pypi.org/project/pytransdecoder/) finds coding regions, and PASA's
 annotation comparison and update logic runs on the result.
 
 Status: early development. See [DESIGN.md](DESIGN.md) and [STATUS.md](STATUS.md).
@@ -12,7 +12,7 @@ Status: early development. See [DESIGN.md](DESIGN.md) and [STATUS.md](STATUS.md)
 ## Quick start
 
 ```bash
-pip install -e .            # plus minimap2, samtools, LRAA, TransDecoder on PATH
+pip install -e .            # installs pytransdecoder; plus minimap2, samtools, LRAA on PATH
 pasa-xg run --genome genome.fa --reads reads.fq.gz --input_type pacbio_hifi \
     --annotation annot.gff3 --cpu 16 --out run/
 pasa-xg status --out run/

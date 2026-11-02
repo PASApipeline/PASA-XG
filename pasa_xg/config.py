@@ -41,7 +41,7 @@ class Settings:
     max_intron_length: int = 100000
     lraa_cmd: str = "LRAA"
     lraa_opts: Optional[str] = None
-    transdecoder_dir: Optional[str] = None
+    transdecoder_cmd: str = "pytransdecoder"
     genetic_code: str = "Universal"
     min_orf_aa: int = 100
     pfam_hits: Optional[str] = None

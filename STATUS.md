@@ -55,6 +55,15 @@ This run exposed 5'-incomplete reference CDSs (GENCODE `cds_start_NF`) being tra
 from the wrong frame; the first CDS phase is now honored everywhere (0 of 336 reference
 CDSs flagged, was 89).
 
+## Coding regions: pytransdecoder (2026-11-02)
+
+The coding stage runs pytransdecoder 0.2.1 (PyPI) instead of Perl TransDecoder 5.7.1, same options.
+- E5 pilot, 2,950 isoforms whose intron chain matches a complete GENCODE v50 coding transcript: the ORF
+  reproduces GENCODE's CDS exactly for 86.7% (Perl: 66.7%). Most of the gain is Perl's 5'-partial calls
+  that are complete in GENCODE (624 to 102); pytransdecoder finds no ORF slightly more often (176 vs 130).
+- chr22 E0 benchmark (alignment and assembly cached, default mode): deleted genes recovered 21 vs 17;
+  added or changed multi-exon structures found in GENCODE 284 vs 267; every other measure equal or within 1.
+
 ## Not done yet
 
 - Alternative splicing (waiting on the user's Python code and alt TSS/polyA work).

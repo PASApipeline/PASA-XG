@@ -42,7 +42,8 @@ def _run_parser(p: argparse.ArgumentParser) -> None:
     a.add_argument("--lraa_opts", help="extra LRAA options (quoted string)")
 
     c = p.add_argument_group("coding regions")
-    c.add_argument("--transdecoder_dir", help="directory holding TransDecoder.LongOrfs/Predict")
+    c.add_argument("--transdecoder_cmd", default="pytransdecoder",
+                   help="pytransdecoder command (PyPI pytransdecoder >= 0.2.1)")
     c.add_argument("--genetic_code", default="Universal")
     c.add_argument("--min_orf_aa", type=int, default=100)
     c.add_argument("--pfam_hits", help="hmmscan --domtblout of longest_orfs.pep against Pfam")

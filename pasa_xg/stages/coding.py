@@ -1,4 +1,4 @@
-"""Stage 4: TransDecoder ORFs on the isoforms, mapped to the genome."""
+"""Stage 4: TransDecoder ORFs on the isoforms (pytransdecoder, the Python TransDecoder), mapped to the genome."""
 
 from __future__ import annotations
 
@@ -39,14 +39,10 @@ def parse_pep_headers(pep_path: str) -> Dict[str, Orf]:
     return best
 
 
-def transdecoder_bin(s: Settings, name: str) -> str:
-    return os.path.join(s.transdecoder_dir, name) if s.transdecoder_dir else name
-
-
 def run(run: Run, s: Settings, isos_out: Dict[str, Any]) -> Dict[str, Any]:
     inputs = {"isoforms": isos_out["isoforms_path"], "min_aa": s.min_orf_aa,
               "code": s.genetic_code, "pfam": s.pfam_hits, "blastp": s.blastp_hits,
-              "stage": "coding/2", "src": code_digest("pasa_xg.stages.coding", "pasa_xg.isoforms", "pasa_xg.models")}
+              "stage": "coding/3", "transdecoder": s.transdecoder_cmd, "src": code_digest("pasa_xg.stages.coding", "pasa_xg.isoforms", "pasa_xg.models")}
 
     def body(d: str) -> Dict[str, Any]:
         logp = os.path.join(d, "transdecoder.log")
@@ -56,10 +52,10 @@ def run(run: Run, s: Settings, isos_out: Dict[str, Any]) -> Dict[str, Any]:
         os.symlink(isos_out["fasta_path"], fa)
         isos = iso_mod.load(isos_out["isoforms_path"])
         td = os.path.join(d, "transdecoder")
-        run_cmd([transdecoder_bin(s, "TransDecoder.LongOrfs"), "-t", fa, "-S", "-O", td,
+        run_cmd([s.transdecoder_cmd, "longorfs", "-t", fa, "-S", "-O", td,
                  "-m", str(s.min_orf_aa), "-G", s.genetic_code], log_path=logp, cwd=d)
-        predict = [transdecoder_bin(s, "TransDecoder.Predict"), "-t", fa, "-O", td,
-                   "--single_best_only", "-G", s.genetic_code]
+        # one ORF per transcript is pytransdecoder's default (Perl's --single_best_only)
+        predict = [s.transdecoder_cmd, "predict", "-t", fa, "-O", td, "-G", s.genetic_code]
         if len(isos) < MIN_ISOFORMS_FOR_START_REFINEMENT:
             predict.append("--no_refine_starts")
         if s.pfam_hits:
