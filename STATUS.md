@@ -59,6 +59,9 @@ CDSs flagged, was 89).
 
 - Alternative splicing (waiting on the user's Python code and alt TSS/polyA work).
 - Docker image and WDL: drafts in `docker/` and `WDL/`, not built or run.
+- Release on PyPI and/or bioconda (`pasa-xg`). Requested by the user 2026-11-02. External
+  tools (minimap2, LRAA, TransDecoder, samtools) make bioconda the natural home for a full
+  install; PyPI would carry the Python package alone.
 - Benchmarks (human with PacBio/ONT, Arabidopsis, Trinity).
 - Repo not yet on GitHub (`PASApipeline/PASA-XG` to be created).
 
