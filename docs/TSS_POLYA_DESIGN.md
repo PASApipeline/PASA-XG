@@ -1,6 +1,7 @@
 # TSS / PolyA-aware annotation update: design draft
 
-Status: draft for review, 2026-11-02; revised after the user's rule on alternative ends. Nothing here is implemented yet.
+Status: design agreed 2026-11-02 (the user's rule on alternative ends, and the four decisions
+at the end). Implementation in progress.
 
 ## Problem
 
@@ -60,12 +61,19 @@ The user's rule (2026-11-02): **don't annotate a separate isoform for every alte
 polyA.** Add one only when the current end isn't supported, or when the alternative end changes
 the protein, so that the ORF is shorter or longer than the annotated one.
 
+Models are never shortened (decision 2).
+
 | isoform end | protein | model end anchored | model end not anchored |
 |---|---|---|---|
-| supported, differs from the model's | same CDS | **no change**; the site is recorded on the model | **end update** to the isoform's end, either direction |
-| supported, differs from the model's | different CDS | **new isoform** (alternative TSS / polyA protein) | **end update**, as a protein update (validated as now) |
+| supported, beyond the model end | same CDS | **no change**; the site is recorded on the model | **end update**: extend to the isoform's end |
+| supported, inside the model end | same CDS | **no change**; the site is recorded | **no change**; the site is recorded |
+| supported, beyond the model end | different CDS | **new isoform** (alternative-end protein) | **end update**, as a protein update (validated as now) |
+| supported, inside the model end | different CDS | **new isoform** (alternative-end protein) | **new isoform** (alternative-end protein) |
 | not supported, beyond the model end | same CDS | model kept, no extension | UTR update (as now) |
 | not supported, inside the model end | any | absorbed (as now) | absorbed (as now) |
+
+When several isoforms support different sites beyond an unanchored model end, the most-expressed
+one sets the new end (decision 4).
 
 - **Different CDS:** this happens, for example, when an alternative TSS falls downstream of the
   annotated start codon, so translation starts at a later ATG. It also happens when an
@@ -119,21 +127,17 @@ action types: `alt_end_protein_isoform`, `end_update` and `alt_site_recorded`.
 - **No sites at all:** no LRAA flags and no BEDs means today's behavior exactly, so old results
   stay reproducible.
 
-## Questions for review
+## Decisions (user, 2026-11-02)
 
-1. **Snapping.** Should a supported end move onto the site (the LRAA node coordinate, or a CAGE
-   peak's dominant position), or keep the isoform's own coordinate? The draft keeps the isoform
-   coordinate and records the site in an attribute.
-2. **Shortening.** An end update toward a supported site can shorten the model, which PASA never
-   does. The draft allows it in default mode, where the model end is unsupported. Under
-   `--additive` no end moves.
-3. **Reference ends in default mode.** Should a reference end with no nearby site still count
-   as anchored (trusting the curators), or only with evidence? The draft requires evidence in
-   default mode.
-4. **Which isoform sets the end.** When several isoforms support different sites at an
-   unanchored model end, which one updates the model? The draft uses the most-expressed
-   supported isoform. With `--isoforms_gtf` there is no TPM, so it uses the one with the most
-   source support (merge tracking count), else the outermost supported end.
+1. **Snapping:** keep the isoform's own end coordinate, and record the matched site in an
+   attribute.
+2. **Shortening:** never. A model end is only ever extended. A supported site inside the model
+   is recorded, or becomes a new isoform when the protein differs.
+3. **Reference ends in default mode:** anchored only with evidence, meaning a known site or a
+   supported isoform end within the window. `--additive` anchors every reference end.
+4. **Which isoform sets the end:** the most-expressed supported isoform. With `--isoforms_gtf`
+   there is no TPM, so it is the one with the most source support (merge tracking count), else
+   the outermost supported end.
 
 ## Evaluation
 
