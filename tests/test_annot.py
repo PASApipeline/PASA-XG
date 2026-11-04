@@ -285,3 +285,26 @@ def test_additive_mode_keeps_an_unsupported_model(tmp_path):
     new, _, _ = apply_round(skip_model, decisions, splits, "r1", {})
     tx = new.genes["G1"].transcripts
     assert tx["G1.t1"].exons == [ex[0], ex[2], ex[3]] and len(tx) == 2
+
+
+def test_additive_mode_never_shortens_a_model_whose_utr_holds_a_longer_orf(tmp_path):
+    L = Locus(tmp_path)
+    L.spacer(300)
+    ex = L.gene([300, 300, 300])
+    sense = [c for c in (a + b + d for a in "ACGT" for b in "ACGT" for d in "ACGT") if TABLE[c] not in "*M"]
+    tail = "CCCATG" + "".join(L.rng.choice(sense) for _ in range(400)) + "TAACCC"   # longer ORF in the 3' UTR
+    L._add(tail)
+    g = L.genome()
+    m = model("G1", ex, g)
+    t = m.transcripts["G1.t1"]
+    t.exons = ex[:-1] + [(ex[-1][0], ex[-1][1] + len(tail))]
+    ann = AnnotationSet([m])
+    short = iso("short", "L1", ex, g)
+    d, decisions, splits = decide(ann, [short], g, Params(TRUST_FL_STATUS=True))
+    assert d["short"].action == "utr_update"                                # PASA: model cut to the isoform
+    new, _, _ = apply_round(ann, decisions, splits, "r1", {})
+    assert new.genes["G1"].transcripts["G1.t1"].exons == ex
+    d, decisions, splits = decide(ann, [short], g, Params(ADDITIVE=True, TRUST_FL_STATUS=True))
+    assert d["short"].action == "matches_existing"
+    new, _, _ = apply_round(ann, decisions, splits, "r1", {})
+    assert new.genes["G1"].transcripts["G1.t1"].exons == t.exons

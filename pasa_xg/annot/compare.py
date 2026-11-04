@@ -438,6 +438,11 @@ class RoundComparer:
                 ok, _ = self.compare(m, mg, new_partials=(p5, p3))
                 if ok:
                     c.updated = mg
+                elif self.p.ADDITIVE:
+                    # the merged structure's longest ORF is another protein (e.g. one in a long
+                    # UTR the isoform lacks): PASA falls back to the isoform alone, shortening
+                    # the model; additive keeps the merged exons with the model's CDS instead
+                    c.updated = mg.copy(cds=list(m.cds), cds_offset=m.cds_offset)
         trying = [c for c in valid if c.id not in demoted_ids]
         # models built from full-length isoforms in earlier rounds are not replaced
         updated: Set[str] = {m.id for m in models if m.id in self.prior_fl_models}
