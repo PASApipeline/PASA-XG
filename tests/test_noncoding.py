@@ -107,3 +107,15 @@ def test_without_sample_counts_every_isoform_is_evaluated_as_it_is(tmp_path):
         del i.tx.attrs["n_samples"]                                     # a single-sample run
     _, d = run(ann, [retained, novel], g)
     assert d["ri"].action == "noncoding_isoform" and d["nov"].action == "noncoding_gene"
+
+
+def test_isoform_matching_two_genes_on_shared_introns_is_flagged_and_skipped(tmp_path):
+    from pasa_xg.models import Gene, Transcript
+    ex, _, g = _locus(tmp_path)
+    dup = Transcript("G2.t1", "G2", "c", "+",                            # a second gene on G1's 2nd intron
+                     [ex[1], (ex[2][0], ex[2][0] + 100), (ex[2][0] + 150, ex[2][1])])
+    ann = AnnotationSet([model("G1", ex, g), Gene("G2", "c", "+", {"G2.t1": dup})])
+    retained = [(ex[0][0], ex[1][1]), ex[2]]
+    new, d = run(ann, [_iso("ri", retained, g, 3, coding=False)], g)
+    assert d["ri"].status == 105 and sorted(d["ri"].genes) == ["G1", "G2"]
+    assert d["ri"].comment.startswith("shares introns") and len(new.genes["G1"].transcripts) == 1

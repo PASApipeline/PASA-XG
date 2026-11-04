@@ -173,6 +173,17 @@ Also agreed 2026-11-04:
 
 Open: the mono-exonic rule (research pending).
 
+Decided 2026-11-04:
+- Mono-exonic noncoding transcripts outside known genes are left out (106). A mono-exonic isoform
+  with a complete ORF already becomes a novel coding gene in the coding rounds (pytransdecoder in
+  stage 04, as Perl PASA's `--TRANSDECODER`); of the 242 left out on the chr22 pilot, 239 had no
+  complete ORF of at least 100 aa.
+- An isoform that matches two or more genes equally (105) is not added; the gene sets are written
+  for the user to review. On the chr22 pilot, 130 of 135 matched genes that share the isoform's
+  introns (overlapping GENCODE genes on the same splice sites: lncRNA pairs, lncRNAs over coding
+  genes, immunoglobulin segments), likely isoforms of one gene that the annotation splits; 5
+  joined introns of different genes (readthrough).
+
 ## Implementation (2026-11-04)
 
 `--include_noncoding` runs `annot/noncoding.py` after the coding rounds, on the final annotation,
@@ -187,6 +198,10 @@ decisions are one more round in `annot_update.decisions.tsv`. Statuses: 101 adde
   loci. With no shared intron, use exon overlap, ignoring genes whose transcripts are all
   < 300 bp (embedded miRNA / snoRNA genes). On the 10-sample pilot, multi-gene skips went from
   1,603 (exon overlap only) to 135.
+- **Ties** (105) are not updated. The comment says whether the isoform shares an intron that every
+  tied gene has ("may be isoforms of one gene") or joins introns of different genes
+  ("readthrough"), and `annot_update.gene_conflicts.tsv` lists each gene set with its kind,
+  isoform count and IDs, and max TPM; the log warns with the totals.
 - **Redundancy.** An isoform that `merge_compatible`s with any transcript of its gene, coding or
   not, adds nothing (104). No end updates of noncoding transcripts in this version.
 - **Labels.**

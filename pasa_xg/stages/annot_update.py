@@ -74,6 +74,20 @@ def label_ends(ann: AnnotationSet, idx: SiteIndex) -> None:
         t.attrs["polya_support"] = idx.near(t.contig, t.strand, POLYA, three_prime(t)) or "none"
 
 
+def write_conflicts(decisions, isos, path: str) -> None:
+    """Gene sets that isoforms match equally (noncoding status 105), for the user to review:
+    the annotation may split one gene, or the isoforms read through. Nothing was updated."""
+    by: Dict[str, List[Any]] = {}
+    for d in decisions:
+        if d.status == 105:
+            by.setdefault(" ".join(d.genes), []).append(d)
+    rows = [{"genes": k, "kind": "shared_introns" if ds[0].comment.startswith("shares") else "readthrough",
+             "isoforms": len(ds), "isoform_ids": ",".join(d.isoform_id for d in ds),
+             "max_TPM": max(isos[d.isoform_id].tpm for d in ds)} for k, ds in by.items()]
+    pd.DataFrame(rows, columns=["genes", "kind", "isoforms", "isoform_ids", "max_TPM"]).sort_values(
+        "isoforms", ascending=False).to_csv(path, sep="\t", index=False)
+
+
 def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome, s: Settings,
            out_dir: str, p: Params) -> Dict[str, Any]:
     table = codon_table(s.genetic_code)
@@ -168,6 +182,7 @@ def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome,
             if d.status in (101, 102):
                 incorporated.add(d.isoform_id)
         rows += nrows
+        write_conflicts(ncd, isos, os.path.join(out_dir, "annot_update.gene_conflicts.tsv"))
         counts = Counter(r["action"] for r in nrows)
         summary.append({"round": rnd, "evaluated": len(nrows), "incorporated": counts["noncoding_isoform"]
                         + counts["noncoding_gene"], "genes_changed": len({r["genes"] for r in nrows if r["valid"]}),

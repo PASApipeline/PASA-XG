@@ -150,6 +150,18 @@ def assign_genes(tx: Transcript, ann: AnnotationSet) -> List[Gene]:
     return big if big or not over else over
 
 
+def tie_note(tx: Transcript, genes: List[Gene]) -> str:
+    """Why an isoform matches several genes equally: an intron every one of them has (overlapping
+    annotated genes on the same splice sites, perhaps one gene split in two), or introns of
+    different genes joined (a readthrough)."""
+    ints = set(introns_of(tx.exons))
+    per = [set().union(*(introns_of(r.exons) for r in g.transcripts.values())) for g in genes]
+    ids = ", ".join(g.id for g in genes)
+    if ints & set.intersection(*per):
+        return f"shares introns with genes {ids}: they may be isoforms of one gene; not updated"
+    return f"joins introns of genes {ids}: readthrough; not updated"
+
+
 def _in_intron(t: Transcript, ann: AnnotationSet) -> bool:
     lo, hi = t.start, t.end
     for g in ann.overlapping(t.contig, lo, hi):
@@ -182,7 +194,7 @@ def run_noncoding(ann: AnnotationSet, isos: Dict[str, Isoform], candidates: Iter
         tx = iso.tx
         genes = assign_genes(tx, new)
         if len(genes) > 1:
-            out.append(NcDecision(k, 105, "", [g.id for g in genes]))
+            out.append(NcDecision(k, 105, tie_note(tx, genes), [g.id for g in genes]))
             continue
         if not genes:
             if tx.num_exons == 1:
@@ -254,4 +266,8 @@ def run_noncoding(ann: AnnotationSet, isos: Dict[str, Isoform], candidates: Iter
     for d in out:
         n[d.action] += 1
     log.info("noncoding pass: %d candidates, %s", len(out), dict(n))
+    ties = {" ".join(d.genes) for d in out if d.status == 105}
+    if ties:
+        log.warning("noncoding pass: %d isoforms in %d gene sets match two or more genes equally and were "
+                    "not added; see annot_update.gene_conflicts.tsv", sum(d.status == 105 for d in out), len(ties))
     return new, out
