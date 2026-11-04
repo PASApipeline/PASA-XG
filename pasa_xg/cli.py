@@ -89,6 +89,12 @@ def _run_parser(p: argparse.ArgumentParser) -> None:
                         "into) a model even when other isoforms support that model's own "
                         "structure. By default such a model is kept and the new structure "
                         "is added as an alternative isoform.")
+    u.add_argument("--include_noncoding", action="store_true",
+                   help="after the coding rounds, add isoforms the coding update turned away "
+                        "that have a new structure and enough evidence (n_samples from the "
+                        "isoform GTF, supported ends): to their gene, labeled pasa_xg_coding "
+                        "low / nmd / none, or as novel noncoding genes. Every gene is labeled "
+                        "pasa_xg_gene_class coding / likely_noncoding (docs/NONCODING_DESIGN.md)")
     u.add_argument("--min_tpm", type=float, default=0.0,
                    help="isoforms below this TPM do not update the annotation")
     u.add_argument("--min_isoform_fraction", type=float, default=0.0,

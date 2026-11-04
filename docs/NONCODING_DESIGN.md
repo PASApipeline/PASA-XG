@@ -1,6 +1,7 @@
 # Noncoding isoforms and an evidence filter: design draft
 
-Status: agreed in part, 2026-11-04 (see "Decisions" at the end). Not yet implemented. The
+Status: agreed 2026-11-04; implemented as `--include_noncoding` (pasa_xg/annot/noncoding.py, see
+"Implementation" at the end). The
 default behavior stays Perl PASA's. Calibration details: PASA-XG-Paper
 `experiments/E5_gencode_xg/results/FILTER_CALIBRATION.md`.
 
@@ -171,3 +172,37 @@ Also agreed 2026-11-04:
   isoform. Without sites, PASA's behavior is kept.
 
 Open: the mono-exonic rule (research pending).
+
+## Implementation (2026-11-04)
+
+`--include_noncoding` runs `annot/noncoding.py` after the coding rounds, on the final annotation,
+over every eligible isoform that the coding rounds did not incorporate (deferred ones aside). Its
+decisions are one more round in `annot_update.decisions.tsv`. Statuses: 101 added to a known gene,
+102 novel noncoding gene, 103 not enough evidence, 104 assembles with an existing transcript,
+105 two or more genes, 106 mono-exonic with no gene. The comment keeps the coding-round outcome.
+
+- **Gene assignment** (`assign_genes`). Among same-strand genes sharing an intron with the
+  isoform, take the gene whose best transcript's intron set is most similar (Jaccard); ties are
+  status 105. This resolves GENCODE readthrough genes (PRR5 / PRR5-ARHGAP8) and overlapping
+  loci. With no shared intron, use exon overlap, ignoring genes whose transcripts are all
+  < 300 bp (embedded miRNA / snoRNA genes). On the 10-sample pilot, multi-gene skips went from
+  1,603 (exon overlap only) to 135.
+- **Redundancy.** An isoform that `merge_compatible`s with any transcript of its gene, coding or
+  not, adds nothing (104). No end updates of noncoding transcripts in this version.
+- **Labels.**
+  - `pasa_xg_coding`: `low` when the isoform's ORF (its CDS from the coding stage) is a substring
+    of a gene protein or passes `compare_proteins` (the CDS is kept); `nmd` when the stop codon is
+    more than `NMD_STOP_TO_JUNCTION` upstream of the last junction; else `none`.
+  - `transcript_type`: `pasa_low_coding` or `pasa_noncoding`.
+  - Every gene gets `pasa_xg_gene_class` `coding` / `likely_noncoding` (on GTF transcript lines
+    too). Novel genes are `PXG_gene_N`, with `pasa_xg_novel "noncoding"` and `antisense_to` when
+    they overlap a gene on the other strand.
+- **Evidence.**
+  - `n_samples` comes from the isoform GTF attribute. When it is missing, it is taken as 1, so
+    only end support can admit, rather than the filter being off.
+  - Supported ends: the isoform's TSS / PolyA flag, or a known site within `--site_window`
+    (default 50 bp; the calibration used 25 bp).
+  - For merged catalogs, `tag_ends.py --tracking` (PASA-XG-Paper) writes `n_samples`.
+- **Pilot** (E5 random-10, chr22, additive): 1,108 isoforms added to known genes (625 low, 244
+  NMD, 239 none), 68 in novel noncoding genes. Antisense calls in round 1 fell from 1,861 to 663
+  with the relabel fix.

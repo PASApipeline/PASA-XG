@@ -20,6 +20,7 @@ from .. import isoforms as iso_mod
 from ..annot.apply import apply_round
 from ..annot.checks import Params
 from ..annot.compare import STATUS, Decision, run_round
+from ..annot.noncoding import NC_STATUS, run_noncoding
 from ..annot.sites import POLYA, TSS, SiteIndex, add_isoform_ends, five_prime, load_bed, three_prime
 from ..config import Settings
 from ..genome import Genome, codon_table, translate
@@ -146,6 +147,31 @@ def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome,
                 hi = max(eligible[k].tx.end for k in ks)
                 if lo <= g.end and hi >= g.start:
                     targets |= set(ks)
+    if s.include_noncoding:
+        last = {}
+        for r in rows:
+            last[r["isoform_id"]] = r
+        cands = [k for k in eligible if k not in incorporated and last.get(k, {}).get("action") != "deferred"]
+        current, ncd = run_noncoding(current, eligible, cands, genome, table, p, sites if len(sites) else None,
+                                     s.run_label)
+        rnd = len(summary) + 1
+        nrows = []
+        for d in ncd:
+            i, prev = isos[d.isoform_id], last.get(d.isoform_id, {})
+            nrows.append({"round": rnd, "isoform_id": d.isoform_id, "lraa_gene": i.tx.gene_id,
+                          "action": d.action, "valid": d.status in (101, 102), "pasa_status": d.status,
+                          "pasa_status_descr": NC_STATUS[d.status], "genes": " ".join(d.genes), "model": "",
+                          "annotation_id": d.annotation_id, "full_length": i.full_length,
+                          "num_exons": i.tx.num_exons, "TPM": i.tpm, "isoform_fraction": i.isoform_fraction,
+                          "comment": "; ".join(x for x in (d.comment, f"coding round: {prev.get('action', '')} "
+                                                           f"({prev.get('pasa_status', '')}) {prev.get('comment', '')}".strip()) if x)})
+            if d.status in (101, 102):
+                incorporated.add(d.isoform_id)
+        rows += nrows
+        counts = Counter(r["action"] for r in nrows)
+        summary.append({"round": rnd, "evaluated": len(nrows), "incorporated": counts["noncoding_isoform"]
+                        + counts["noncoding_gene"], "genes_changed": len({r["genes"] for r in nrows if r["valid"]}),
+                        **counts})
     # final state per isoform: its last evaluation
     table_df = pd.DataFrame(rows)
     final = table_df.sort_values("round").groupby("isoform_id", as_index=False).last()
@@ -169,7 +195,7 @@ def run(run: Run, s: Settings, prep: Dict[str, Any], coding: Dict[str, Any]) -> 
               "trust_fl": s.trust_fl_status, "nmd": (s.reject_nmd_targets, s.nmd_stop_to_junction),
               "pct_coding": s.min_percent_coding, "fl_orf": s.min_fl_orf_aa, "min_tpm": s.min_tpm, "min_frac": s.min_isoform_fraction,
               "tss_sites": [run.fdigest(x) for x in s.tss_sites], "polya_sites": [run.fdigest(x) for x in s.polya_sites],
-              "site_window": s.site_window, "alt_end_isoforms": s.alt_end_isoforms,
+              "site_window": s.site_window, "alt_end_isoforms": s.alt_end_isoforms, "noncoding": s.include_noncoding,
               "code": s.genetic_code, "stage": "annot_update/2", "src": code_digest("pasa_xg.stages.annot_update", "pasa_xg.annot", "pasa_xg.models", "pasa_xg.genome", "pasa_xg.gff")}
 
     def body(d: str) -> Dict[str, Any]:
