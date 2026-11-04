@@ -119,3 +119,21 @@ def test_isoform_matching_two_genes_on_shared_introns_is_flagged_and_skipped(tmp
     new, d = run(ann, [_iso("ri", retained, g, 3, coding=False)], g)
     assert d["ri"].status == 105 and sorted(d["ri"].genes) == ["G1", "G2"]
     assert d["ri"].comment.startswith("shares introns") and len(new.genes["G1"].transcripts) == 1
+
+
+def test_gene_conflicts_report_lists_coding_and_noncoding_ties(tmp_path):
+    from pasa_xg.models import Gene, Transcript
+    from pasa_xg.stages.annot_update import write_conflicts
+    import pandas as pd
+    ex, _, g = _locus(tmp_path)
+    dup = Transcript("G2.t1", "G2", "c", "+", [ex[1], (ex[2][0], ex[2][0] + 100), (ex[2][0] + 150, ex[2][1])])
+    ann = AnnotationSet([model("G1", ex, g), Gene("G2", "c", "+", {"G2.t1": dup})])
+    a, b = _iso("a", [(ex[0][0], ex[1][1]), ex[2]], g, 3), _iso("b", ex, g, 3)
+    rows = [{"isoform_id": "a", "pasa_status": 35, "genes": "G1 G2"},
+            {"isoform_id": "b", "pasa_status": 30, "genes": "G2 G1"},
+            {"isoform_id": "a", "pasa_status": 105, "genes": "G1 G2"}]
+    out = tmp_path / "c.tsv"
+    write_conflicts(rows, {"b"}, {"a": a, "b": b}, ann, str(out))
+    d = pd.read_csv(out, sep="\t")
+    assert len(d) == 1 and d.genes[0] == "G1 G2" and d.kind[0] == "shared_introns"
+    assert d.isoform_ids[0] == "a" and str(d.pasa_status[0]) == "105" and bool(d.genes_share_introns[0])

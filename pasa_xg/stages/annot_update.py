@@ -20,7 +20,8 @@ from .. import isoforms as iso_mod
 from ..annot.apply import apply_round
 from ..annot.checks import Params
 from ..annot.compare import STATUS, Decision, run_round
-from ..annot.noncoding import NC_STATUS, run_noncoding
+from ..annot.noncoding import NC_STATUS, run_noncoding, tie_kind
+from ..annot.structure import introns_of
 from ..annot.sites import POLYA, TSS, SiteIndex, add_isoform_ends, five_prime, load_bed, three_prime
 from ..config import Settings
 from ..genome import Genome, codon_table, translate
@@ -74,18 +75,39 @@ def label_ends(ann: AnnotationSet, idx: SiteIndex) -> None:
         t.attrs["polya_support"] = idx.near(t.contig, t.strand, POLYA, three_prime(t)) or "none"
 
 
-def write_conflicts(decisions, isos, path: str) -> None:
-    """Gene sets that isoforms match equally (noncoding status 105), for the user to review:
-    the annotation may split one gene, or the isoforms read through. Nothing was updated."""
-    by: Dict[str, List[Any]] = {}
-    for d in decisions:
-        if d.status == 105:
-            by.setdefault(" ".join(d.genes), []).append(d)
-    rows = [{"genes": k, "kind": "shared_introns" if ds[0].comment.startswith("shares") else "readthrough",
-             "isoforms": len(ds), "isoform_ids": ",".join(d.isoform_id for d in ds),
-             "max_TPM": max(isos[d.isoform_id].tpm for d in ds)} for k, ds in by.items()]
-    pd.DataFrame(rows, columns=["genes", "kind", "isoforms", "isoform_ids", "max_TPM"]).sort_values(
-        "isoforms", ascending=False).to_csv(path, sep="\t", index=False)
+TIE_STATUS = {5, 11, 30, 35, 105}   # matches / overlaps two or more genes; not updated
+
+
+def write_conflicts(rows: List[Dict[str, Any]], incorporated: Set[str], isos, ann: AnnotationSet,
+                    path: str) -> None:
+    """Gene sets that unincorporated isoforms tie between, in the coding rounds (5, 11, 30, 35) or the
+    noncoding pass (105), for the user to review: the annotation may split one gene
+    (shared_introns, or genes_share_introns), or the isoforms read through (readthrough) or only
+    overlap the genes' exons (overlap)."""
+    last: Dict[str, Dict[str, Any]] = {}
+    for r in rows:
+        if r["pasa_status"] in TIE_STATUS and r["isoform_id"] not in incorporated:
+            last[r["isoform_id"]] = r
+    by: Dict[Any, List[Dict[str, Any]]] = {}
+    for k, r in last.items():
+        genes = [ann.genes[g] for g in sorted(set(r["genes"].split())) if g in ann.genes]
+        if len(genes) < 2:
+            continue
+        by.setdefault((" ".join(g.id for g in genes), tie_kind(isos[k].tx, genes)), []).append(r)
+    def share(gs: str) -> bool:
+        per = [set().union(*(introns_of(t.exons) for t in ann.genes[g].transcripts.values())) for g in gs.split()]
+        return bool(set.intersection(*per))
+
+    out = [{"genes": g, "kind": kind, "genes_share_introns": share(g), "isoforms": len(rs),
+            "pasa_status": ",".join(str(x) for x in sorted({r["pasa_status"] for r in rs})),
+            "max_TPM": max(isos[r["isoform_id"]].tpm for r in rs),
+            "isoform_ids": ",".join(r["isoform_id"] for r in rs)} for (g, kind), rs in by.items()]
+    df = pd.DataFrame(out, columns=["genes", "kind", "genes_share_introns", "isoforms", "pasa_status", "max_TPM", "isoform_ids"])
+    df.sort_values(["kind", "isoforms"], ascending=[False, False]).to_csv(path, sep="\t", index=False)
+    if len(df):
+        log.warning("%d unincorporated isoforms tie between two or more genes (%s gene sets); not updated, "
+                    "see %s", int(df["isoforms"].sum()),
+                    ", ".join(f"{n} {k}" for k, n in df["kind"].value_counts().items()), os.path.basename(path))
 
 
 def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome, s: Settings,
@@ -182,11 +204,11 @@ def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome,
             if d.status in (101, 102):
                 incorporated.add(d.isoform_id)
         rows += nrows
-        write_conflicts(ncd, isos, os.path.join(out_dir, "annot_update.gene_conflicts.tsv"))
         counts = Counter(r["action"] for r in nrows)
         summary.append({"round": rnd, "evaluated": len(nrows), "incorporated": counts["noncoding_isoform"]
                         + counts["noncoding_gene"], "genes_changed": len({r["genes"] for r in nrows if r["valid"]}),
                         **counts})
+    write_conflicts(rows, incorporated, isos, current, os.path.join(out_dir, "annot_update.gene_conflicts.tsv"))
     # final state per isoform: its last evaluation
     table_df = pd.DataFrame(rows)
     final = table_df.sort_values("round").groupby("isoform_id", as_index=False).last()
