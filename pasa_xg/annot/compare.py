@@ -438,10 +438,11 @@ class RoundComparer:
                 ok, _ = self.compare(m, mg, new_partials=(p5, p3))
                 if ok:
                     c.updated = mg
-                elif self.p.ADDITIVE:
+                elif self.p.ADDITIVE or self.sites is not None:
                     # the merged structure's longest ORF is another protein (e.g. one in a long
                     # UTR the isoform lacks): PASA falls back to the isoform alone, shortening
-                    # the model; additive keeps the merged exons with the model's CDS instead
+                    # the model; additive, or with sites (models are never shortened), keeps
+                    # the merged exons with the model's CDS instead
                     c.updated = mg.copy(cds=list(m.cds), cds_offset=m.cds_offset)
         trying = [c for c in valid if c.id not in demoted_ids]
         # models built from full-length isoforms in earlier rounds are not replaced
@@ -761,6 +762,10 @@ class RoundComparer:
     def classify_antisense(self, cands: Iterable[Cand]) -> None:
         for c in cands:
             if c.status not in (1, 10, 44, 19, 22, 27, 34):
+                continue
+            # PASA relabels whenever an opposite-strand gene overlaps; an isoform whose exons
+            # overlap a gene on its own strand is that gene's (sense) transcript, not antisense
+            if self.mapped_genes([c], fli=False, strand=c.iso.tx.strand):
                 continue
             flip = "-" if c.iso.tx.strand == "+" else "+"
             genes = self.mapped_genes([c], fli=False, strand=flip)

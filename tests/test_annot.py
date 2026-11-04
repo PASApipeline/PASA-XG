@@ -308,3 +308,22 @@ def test_additive_mode_never_shortens_a_model_whose_utr_holds_a_longer_orf(tmp_p
     assert d["short"].action == "matches_existing"
     new, _, _ = apply_round(ann, decisions, splits, "r1", {})
     assert new.genes["G1"].transcripts["G1.t1"].exons == t.exons
+
+
+def test_isoform_on_a_same_strand_gene_is_not_called_antisense(tmp_path):
+    from pasa_xg.annot.compare import Cand, RoundComparer
+    L = Locus(tmp_path)
+    L.spacer(300)
+    ex = L.gene([300, 300, 300], intron=2000)
+    g = L.genome()
+    g1 = model("G1", ex, g)
+    inner = Transcript("G2.t1", "G2", "c", "-", [(ex[0][1] + 500, ex[0][1] + 900)])   # in G1's intron
+    ann = AnnotationSet([g1, Gene("G2", "c", "-", {"G2.t1": inner})])
+    rc = RoundComparer(ann, g, TABLE, Params())
+    over_both = Transcript("x", "L1", "c", "+", [(ex[0][1] - 100, ex[0][1] + 700)])   # G1 exon 1 + G2
+    in_intron = Transcript("y", "L2", "c", "+", [(ex[0][1] + 600, ex[0][1] + 800)])    # G2 only
+    cands = [Cand(Isoform(t, tpm=1.0, isoform_fraction=1.0, orf=None), t.gene_id, False) for t in (over_both, in_intron)]
+    for c in cands:
+        c.set(34, False, "single-exon isoform incompatible with the gene models")
+    rc.classify_antisense(cands)
+    assert cands[0].status == 34 and cands[1].status == 43

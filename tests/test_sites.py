@@ -96,3 +96,25 @@ def test_an_end_without_utr_is_never_anchored(tmp_path):
     longer = iso("longer", "L1", ex, g)
     d, *_ = decide(ann, [longer], g, sites_for([longer]), Params(ADDITIVE=True))
     assert d["longer"].action == "utr_update"
+
+
+def test_with_sites_a_model_whose_utr_holds_a_longer_orf_is_not_shortened(tmp_path):
+    L = Locus(tmp_path)
+    L.spacer(300)
+    ex = L.gene([300, 300, 300])
+    sense = [c for c in (a + b + d for a in "ACGT" for b in "ACGT" for d in "ACGT") if TABLE[c] not in "*M"]
+    tail = "CCCATG" + "".join(L.rng.choice(sense) for _ in range(400)) + "TAACCC"
+    L._add(tail)
+    g = L.genome()
+    m = model("G1", ex, g)
+    t = m.transcripts["G1.t1"]
+    t.exons = ex[:-1] + [(ex[-1][0], ex[-1][1] + len(tail))]
+    ann = AnnotationSet([m])
+    short = iso("short", "L1", ex, g)
+    d, *_ = decide(ann, [short], g, p=Params(TRUST_FL_STATUS=True))     # no sites: PASA cuts it back
+    assert d["short"].action == "utr_update"
+    sites = sites_for([short], known=[("c", "+", TSS, ex[0][0])])
+    d, decisions, splits, _ = decide(ann, [short], g, sites, Params(TRUST_FL_STATUS=True))
+    assert d["short"].action == "matches_existing"
+    new, _, _ = apply_round(ann, decisions, splits, "r1", {})
+    assert new.genes["G1"].transcripts["G1.t1"].exons == t.exons
