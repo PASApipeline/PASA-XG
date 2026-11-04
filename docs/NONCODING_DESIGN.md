@@ -1,7 +1,8 @@
 # Noncoding isoforms and an evidence filter: design draft
 
-Status: draft 2026-11-03, for discussion. Nothing here is implemented. The default behavior stays
-Perl PASA's.
+Status: agreed in part, 2026-11-04 (see "Decisions" at the end). Not yet implemented. The
+default behavior stays Perl PASA's. Calibration details: PASA-XG-Paper
+`experiments/E5_gencode_xg/results/FILTER_CALIBRATION.md`.
 
 ## Problem
 
@@ -128,11 +129,36 @@ label.
 Without `--include_noncoding` and `--isoform_filter`, the outputs are identical to today's. The
 parity tests run as now.
 
-## Decisions for the user
+### 5. Coding-like isoforms in coding genes: a lower bar
 
-1. Admission thresholds: the defaults above, or stricter for noncoding (e.g. n_projects ≥ 2)?
-2. Does the evidence filter also gate the coding path by default once evidence attributes are
-   present, or is it opt-in?
-3. Noncoding isoforms in existing coding genes: allowed (as proposed) or only in noncoding/novel
-   genes?
-4. Antisense relabel fix in default mode, given that it changes no annotation?
+The user's suggestion (2026-11-04): a noncoding-pass isoform in a known coding gene can be held to
+lower thresholds when it is not an NMD target and its ORF is consistent with the gene's expected
+product. "Consistent" here means the ORF's protein aligns to one of the gene's reference proteins
+under the existing `compare_proteins` test, or is a contiguous part of one: same frame, shared
+start or stop.
+
+Such an isoform is labeled `pasa_xg_coding "low"` with its ORF kept as the CDS, and is admitted
+under the coding-path rule (n_samples ≥ 2, or ≥ 1 supported end) rather than the stricter
+noncoding rule. It typically has a coding fraction under 40%, i.e. a long UTR or retained UTR
+intron. NMD targets and isoforms whose ORF is unrelated to the gene's protein stay at the
+noncoding bar.
+
+## Decisions
+
+Agreed 2026-11-04:
+
+- Admission thresholds as in §1 (the recommended rule). Keep the classifier results on record and
+  revisit later.
+- The noncoding second pass (§2), including noncoding isoforms of known coding genes.
+- §5: a lower bar for non-NMD isoforms whose ORF fits the gene's product.
+
+Open:
+
+1. Does the evidence filter gate the coding path by default once evidence attributes are present,
+   or is it opt-in? Recommendation: on by default when the attributes are present (the coding path
+   lets single-sample junk through too), and off when they are absent, with a warning.
+2. Antisense relabel fix in default mode, given that it changes no annotation? Recommendation: yes.
+3. The never-shorten guard (§2 of TSS_POLYA_DESIGN.md) in default mode with sites: should a
+   compatible FL isoform whose merged model fails the protein comparison stop cutting the model
+   back to the isoform (now done for `--additive` only, 5d17023)? Recommendation: yes when sites
+   are given, since the end rules promise models are not shortened; Perl parity without sites.
