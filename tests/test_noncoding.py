@@ -96,3 +96,14 @@ def test_isoform_of_a_gene_with_a_readthrough_goes_to_the_better_matching_gene(t
     skip = [ex[0], ex[2], ex[3]]                                           # exon skip within G1
     _, d = run(ann, [_iso("sk", skip, g, 3, coding=False)], g)
     assert d["sk"].genes == ["G1"]
+
+
+def test_without_sample_counts_every_isoform_is_evaluated_as_it_is(tmp_path):
+    ex, other, g = _locus(tmp_path)
+    ann = AnnotationSet([model("G1", ex, g)])
+    retained = _iso("ri", [ex[0], (ex[1][0], ex[2][1])], g, 1, coding=False)
+    novel = _iso("nov", other, g, 1, coding=False)
+    for i in (retained, novel):
+        del i.tx.attrs["n_samples"]                                     # a single-sample run
+    _, d = run(ann, [retained, novel], g)
+    assert d["ri"].action == "noncoding_isoform" and d["nov"].action == "noncoding_gene"

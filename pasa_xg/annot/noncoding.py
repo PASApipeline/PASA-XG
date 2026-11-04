@@ -14,8 +14,10 @@ Labels: pasa_xg_coding "low" (the isoform's ORF is the gene's product or a conti
 and not an NMD target: the CDS is kept), "nmd" (complete ORF, stop codon upstream of the last
 junction) or "none". Every gene gets pasa_xg_gene_class "coding" or "likely_noncoding".
 
-Evidence: n_samples from the isoform's GTF attribute (missing: 1, as for a single-sample run) and
-supported ends (an isoform TSS / PolyA flag, or a known site within the window).
+Evidence filter, only for multi-sample merged catalogs: when an isoform carries n_samples (a
+GTF attribute, e.g. from the E5 Isopedia merge) it must also pass, with supported ends being an
+isoform TSS / PolyA flag or a known site within the window. Without n_samples (a single-sample
+run, the usual case) every isoform is evaluated as it is.
   low                    n_samples >= 2, or >= 1 supported end
   other spliced          n_samples >= 2 and >= 1 supported end, or n_samples >= 3
   mono-exonic            n_samples >= 3, both ends supported, not inside a reference intron
@@ -63,11 +65,12 @@ class NcDecision:
         return NC_ACTION.get(self.status, "rejected")
 
 
-def n_samples(iso: Isoform) -> int:
+def n_samples(iso: Isoform) -> Optional[int]:
+    """Samples behind a merged isoform (GTF attribute n_samples); None when not given."""
     try:
-        return int(float(iso.tx.attrs.get("n_samples", 1)))
-    except ValueError:
-        return 1
+        return int(float(iso.tx.attrs["n_samples"]))
+    except (KeyError, ValueError):
+        return None
 
 
 def supported_ends(iso: Isoform, sites: Optional[SiteIndex]) -> Tuple[bool, bool]:
@@ -81,6 +84,8 @@ def supported_ends(iso: Isoform, sites: Optional[SiteIndex]) -> Tuple[bool, bool
 
 def evidence_ok(iso: Isoform, coding: str, sites: Optional[SiteIndex], in_intron: bool) -> Tuple[bool, str]:
     n = n_samples(iso)
+    if n is None:
+        return True, "no sample evidence: not filtered"
     tss, pa = supported_ends(iso, sites)
     ends = tss + pa
     if iso.tx.num_exons == 1:
@@ -160,7 +165,7 @@ def run_noncoding(ann: AnnotationSet, isos: Dict[str, Isoform], candidates: Iter
     new = ann.copy(label="noncoding")
     namer = Namer(new)
     out: List[NcDecision] = []
-    order = sorted(candidates, key=lambda k: (-n_samples(isos[k]), -isos[k].tpm, k))
+    order = sorted(candidates, key=lambda k: (-(n_samples(isos[k]) or 0), -isos[k].tpm, k))
     novel: List[Tuple[Transcript, Isoform]] = []
 
     def tag(t: Transcript, iso: Isoform, coding: str) -> None:
@@ -169,7 +174,8 @@ def run_noncoding(ann: AnnotationSet, isos: Dict[str, Isoform], candidates: Iter
                    "pasa_xg_coding": coding, "pasa_xg_update": "noncoding_isoform",
                    "pasa_xg_round": "noncoding", "pasa_xg_isoform": iso.id,
                    **({"pasa_xg_run": run_label} if run_label else {}),
-                   "n_samples": str(n_samples(iso)), "TPM": f"{iso.tpm:.3f}"}
+                   **({"n_samples": str(n_samples(iso))} if n_samples(iso) is not None else {}),
+                   "TPM": f"{iso.tpm:.3f}"}
 
     for k in order:
         iso = isos[k]

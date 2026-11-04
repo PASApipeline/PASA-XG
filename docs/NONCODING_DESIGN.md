@@ -198,8 +198,11 @@ decisions are one more round in `annot_update.decisions.tsv`. Statuses: 101 adde
     too). Novel genes are `PXG_gene_N`, with `pasa_xg_novel "noncoding"` and `antisense_to` when
     they overlap a gene on the other strand.
 - **Evidence.**
-  - `n_samples` comes from the isoform GTF attribute. When it is missing, it is taken as 1, so
-    only end support can admit, rather than the filter being off.
+  - `n_samples` comes from the isoform GTF attribute. The evidence filter applies only to
+    isoforms that carry it, i.e. multi-sample merged catalogs such as the E5 Isopedia work. A
+    single-sample run (most users) has no `n_samples`, and every isoform is evaluated as it is
+    (decided 2026-11-04: the multi-sample filter is custom to the Isopedia work, not general
+    PASA-XG logic).
   - Supported ends: the isoform's TSS / PolyA flag, or a known site within `--site_window`
     (default 50 bp; the calibration used 25 bp).
   - For merged catalogs, `tag_ends.py --tracking` (PASA-XG-Paper) writes `n_samples`.
