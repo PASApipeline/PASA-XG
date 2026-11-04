@@ -78,7 +78,7 @@ optional annotation and a check on the rule.
 
 ## Proposal
 
-### 1. Evidence filter (front end, `--isoform_filter`)
+### 1. Evidence filter (gates the noncoding pass)
 
 PASA-XG reads per-isoform evidence from GTF transcript attributes when they are present:
 `n_samples`, `n_projects`, `TSS`, `PolyA`, `percA_down`. A helper writes them onto the merged GTF
@@ -87,13 +87,23 @@ from the merge tracking file (the paper's `evidence.py`, moved into PASA-XG as
 
 - The thresholds are relative to cohort size: `n_samples` counts are given as `max(k, f × cohort)`.
   At 101 samples, f is small and k sets the floor.
-- An isoform that fails the filter is reported with action `filtered` and is not evaluated.
+- The filter applies to the noncoding pass only (decided 2026-11-04). The coding path is PASA's,
+  unfiltered. Among isoforms that pass PASA's coding checks, the rule did not separate known from
+  new: in the 10-sample pilot it would drop 21% of GENCODE matches and 18% of new isoforms.
+- An isoform that the noncoding pass turns away for evidence keeps its coding-path status, with
+  `filtered: <reason>` added to its comment.
 
-| class | default admission |
+| noncoding-pass class | default admission |
 |---|---|
-| spliced, coding path | n_samples ≥ 2, or ≥ 1 supported end |
-| spliced, noncoding path (§2) | n_samples ≥ 2 and ≥ 1 supported end, or n_samples ≥ 3 |
+| ORF consistent with the gene's product, not NMD (§5) | n_samples ≥ 2, or ≥ 1 supported end |
+| other spliced | n_samples ≥ 2 and ≥ 1 supported end, or n_samples ≥ 3 |
 | mono-exonic | n_samples ≥ 3, not inside a reference intron, and both ends supported |
+
+The mono-exonic rule is provisional and needs research. In a merged catalog, a mono-exonic
+isoform's n_samples counts samples whose isoform lies inside it, usually one near-full-length
+isoform plus shorter ones nested in it. A count of samples covering ≥ 80% of the span is the
+candidate replacement. Full coding-path filtering stays a possible opt-in (`--filter_coding`),
+to test on the 101-sample catalog.
 
 Without these attributes, as with a single LRAA run, the filter is off, and a warning says so.
 
@@ -152,13 +162,12 @@ Agreed 2026-11-04:
 - The noncoding second pass (§2), including noncoding isoforms of known coding genes.
 - §5: a lower bar for non-NMD isoforms whose ORF fits the gene's product.
 
-Open:
+Also agreed 2026-11-04:
 
-1. Does the evidence filter gate the coding path by default once evidence attributes are present,
-   or is it opt-in? Recommendation: on by default when the attributes are present (the coding path
-   lets single-sample junk through too), and off when they are absent, with a warning.
-2. Antisense relabel fix in default mode, given that it changes no annotation? Recommendation: yes.
-3. The never-shorten guard (§2 of TSS_POLYA_DESIGN.md) in default mode with sites: should a
-   compatible FL isoform whose merged model fails the protein comparison stop cutting the model
-   back to the isoform (now done for `--additive` only, 5d17023)? Recommendation: yes when sites
-   are given, since the end rules promise models are not shortened; Perl parity without sites.
+- The evidence filter gates the noncoding pass only; the coding path is unchanged.
+- The antisense relabel fix (§3) applies in default mode.
+- The never-shorten guard applies in default mode when TSS / polyA sites are given: a compatible FL
+  isoform whose merged model fails the protein comparison no longer cuts the model back to the
+  isoform. Without sites, PASA's behavior is kept.
+
+Open: the mono-exonic rule (research pending).
