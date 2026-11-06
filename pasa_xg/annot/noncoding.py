@@ -1,4 +1,4 @@
-"""Noncoding pass (--include_noncoding, docs/NONCODING_DESIGN.md).
+"""Noncoding pass (on by default; off with --coding_only; docs/NONCODING_DESIGN.md).
 
 Runs after the coding rounds on the final annotation. It takes the isoforms the coding rounds did
 not incorporate and adds those with a new structure and enough evidence:

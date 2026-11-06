@@ -1,6 +1,6 @@
 # Noncoding isoforms and an evidence filter: design draft
 
-Status: agreed 2026-11-04; implemented as `--include_noncoding` (pasa_xg/annot/noncoding.py, see
+Status: agreed 2026-11-04; implemented as `--include_noncoding`, made the default on 2026-11-06 (`--coding_only` turns it off) (pasa_xg/annot/noncoding.py, see
 "Implementation" at the end). The
 default behavior stays Perl PASA's. Calibration details: PASA-XG-Paper
 `experiments/E5_gencode_xg/results/FILTER_CALIBRATION.md`.
@@ -108,7 +108,7 @@ to test on the 101-sample catalog.
 
 Without these attributes, as with a single LRAA run, the filter is off, and a warning says so.
 
-### 2. `--include_noncoding`
+### 2. Noncoding pass (default; `--coding_only` skips it)
 
 After the coding rounds, a noncoding pass takes isoforms that were turned away only for coding
 reasons (statuses 1, 19, 30/35 "matched gene is noncoding", the no-ORF demotion, and NMD failures)
@@ -137,7 +137,7 @@ label.
 
 ### 4. Parity
 
-Without `--include_noncoding` and `--isoform_filter`, the outputs are identical to today's. The
+With `--coding_only` (and no `--isoform_filter`), the outputs are identical to today's. The
 parity tests run as now.
 
 ### 5. Coding-like isoforms in coding genes: a lower bar
@@ -187,7 +187,7 @@ Decided 2026-11-04:
 
 ## Implementation (2026-11-04)
 
-`--include_noncoding` runs `annot/noncoding.py` after the coding rounds, on the final annotation,
+The noncoding pass (default; `--coding_only` skips it) runs `annot/noncoding.py` after the coding rounds, on the final annotation,
 over every eligible isoform that the coding rounds did not incorporate (deferred ones aside). Its
 decisions are one more round in `annot_update.decisions.tsv`. Statuses: 101 added to a known gene,
 102 novel noncoding gene, 103 not enough evidence, 104 assembles with an existing transcript,
@@ -205,7 +205,7 @@ decisions are one more round in `annot_update.decisions.tsv`. Statuses: 101 adde
   `annot_update.gene_conflicts.tsv` lists, for every unincorporated isoform whose last tie was in
   a coding round (5, 11, 30, 35) or the noncoding pass (105), its gene set with the kind, whether
   the genes share introns with each other, the statuses, max TPM and isoform IDs; the log warns
-  with the totals. It is written with or without `--include_noncoding`. On the chr22 pilot: 950
+  with the totals. It is written with or without `--coding_only`. On the chr22 pilot: 950
   isoforms, 200 gene sets (46 shared_introns, 1 readthrough, 153 overlap).
 - **Redundancy.** An isoform that `merge_compatible`s with any transcript of its gene, coding or
   not, adds nothing (104). No end updates of noncoding transcripts in this version.

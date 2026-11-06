@@ -89,10 +89,11 @@ def _run_parser(p: argparse.ArgumentParser) -> None:
                         "into) a model even when other isoforms support that model's own "
                         "structure. By default such a model is kept and the new structure "
                         "is added as an alternative isoform.")
-    u.add_argument("--include_noncoding", action="store_true",
-                   help="after the coding rounds, add isoforms the coding update turned away "
-                        "that have a new structure: to their gene, labeled pasa_xg_coding "
-                        "low / nmd / none, or as novel noncoding genes. Every gene is labeled "
+    u.add_argument("--coding_only", dest="include_noncoding", action="store_false",
+                   help="skip the noncoding pass and update only coding isoforms, as PASA does. By "
+                        "default, after the coding rounds, isoforms the coding update turned away "
+                        "that have a new structure are added: to their gene, labeled pasa_xg_coding "
+                        "low / nmd / none, or as novel noncoding genes, and every gene is labeled "
                         "pasa_xg_gene_class coding / likely_noncoding. Isoforms carrying an "
                         "n_samples GTF attribute (multi-sample merged catalogs) must also pass an "
                         "evidence filter (docs/NONCODING_DESIGN.md)")

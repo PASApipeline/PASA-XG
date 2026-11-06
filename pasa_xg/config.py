@@ -63,7 +63,7 @@ class Settings:
     polya_sites: List[str] = field(default_factory=list)   # known polyA sites, BED
     site_window: int = 50
     alt_end_isoforms: str = "protein"
-    include_noncoding: bool = False    # noncoding pass after the coding rounds (NONCODING_DESIGN.md)
+    include_noncoding: bool = True     # noncoding pass after the coding rounds; --coding_only turns it off
 
     def __post_init__(self) -> None:
         if not self.run_label:
