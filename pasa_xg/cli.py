@@ -89,6 +89,10 @@ def _run_parser(p: argparse.ArgumentParser) -> None:
                         "into) a model even when other isoforms support that model's own "
                         "structure. By default such a model is kept and the new structure "
                         "is added as an alternative isoform.")
+    u.add_argument("--min_sample_fraction", type=float, default=0.01,
+                   help="noncoding pass, for isoforms carrying n_samples and n_samples_total (multi-sample "
+                        "merged catalogs): the evidence filter's minimum of 2 samples becomes "
+                        "max(2, fraction x n_samples_total), and its other sample counts move up with it")
     u.add_argument("--coding_only", dest="include_noncoding", action="store_false",
                    help="skip the noncoding pass and update only coding isoforms, as PASA does. By "
                         "default, after the coding rounds, isoforms the coding update turned away "

@@ -63,6 +63,7 @@ class Settings:
     polya_sites: List[str] = field(default_factory=list)   # known polyA sites, BED
     site_window: int = 50
     alt_end_isoforms: str = "protein"
+    min_sample_fraction: float = 0.01  # noncoding evidence filter, multi-sample catalogs
     include_noncoding: bool = True     # noncoding pass after the coding rounds; --coding_only turns it off
 
     def __post_init__(self) -> None:

@@ -87,6 +87,9 @@ from the merge tracking file (the paper's `evidence.py`, moved into PASA-XG as
 `pasa_xg evidence`).
 
 - The thresholds are relative to cohort size: `n_samples` counts are given as `max(k, f × cohort)`.
+  Implemented 2026-11-06 (`--min_sample_fraction`, default 0.01; cohort from the `n_samples_total`
+  attribute): the minimum of 2 becomes m = max(2, ⌈0.01 × cohort⌉) and every sample count in the rule
+  moves up by m − 2. Unchanged up to 200 samples; at 475 samples m = 5.
   At 101 samples, f is small and k sets the floor.
 - The filter applies to the noncoding pass only (decided 2026-11-04). The coding path is PASA's,
   unfiltered. Among isoforms that pass PASA's coding checks, the rule did not separate known from

@@ -137,3 +137,14 @@ def test_gene_conflicts_report_lists_coding_and_noncoding_ties(tmp_path):
     d = pd.read_csv(out, sep="\t")
     assert len(d) == 1 and d.genes[0] == "G1 G2" and d.kind[0] == "shared_introns"
     assert d.isoform_ids[0] == "a" and str(d.pasa_status[0]) == "105" and bool(d.genes_share_introns[0])
+
+
+def test_sample_minimum_scales_with_the_cohort(tmp_path):
+    ex, _, g = _locus(tmp_path)
+    ann = AnnotationSet([model("G1", ex, g)])
+    retained = [ex[0], (ex[1][0], ex[2][1])]
+    for n, total, ok in ((3, 10, True), (3, 475, False), (6, 475, True)):   # 475 at 1%: minimum 5, so 3 -> 6
+        i = _iso("ri", retained, g, n, coding=False)
+        i.tx.attrs["n_samples_total"] = str(total)
+        _, d = run(ann, [i], g)
+        assert (d["ri"].action == "noncoding_isoform") == ok, (n, total)

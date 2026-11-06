@@ -26,6 +26,7 @@ run, the usual case) every isoform is evaluated as it is.
 from __future__ import annotations
 
 import logging
+import math
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Set, Tuple
@@ -82,19 +83,31 @@ def supported_ends(iso: Isoform, sites: Optional[SiteIndex]) -> Tuple[bool, bool
     return tss, pa
 
 
-def evidence_ok(iso: Isoform, coding: str, sites: Optional[SiteIndex], in_intron: bool) -> Tuple[bool, str]:
+def sample_shift(iso: Isoform, fraction: float) -> int:
+    """How far the sample thresholds move up for a large cohort: the base minimum of 2 samples
+    becomes max(2, ceil(fraction x cohort)), cohort from the GTF attribute n_samples_total."""
+    try:
+        total = int(float(iso.tx.attrs["n_samples_total"]))
+    except (KeyError, ValueError):
+        return 0
+    return max(0, math.ceil(fraction * total - 1e-9) - 2)
+
+
+def evidence_ok(iso: Isoform, coding: str, sites: Optional[SiteIndex], in_intron: bool,
+                fraction: float = 0.01) -> Tuple[bool, str]:
     n = n_samples(iso)
     if n is None:
         return True, "no sample evidence: not filtered"
     tss, pa = supported_ends(iso, sites)
     ends = tss + pa
+    n -= sample_shift(iso, fraction)   # thresholds below are for cohorts up to 200 samples at 1%
     if iso.tx.num_exons == 1:
         ok = n >= 3 and ends == 2 and not in_intron
     elif coding == "low":
-        ok = n >= 2 or ends >= 1
+        ok = n >= 2 or (ends >= 1 and n >= 1)
     else:
         ok = (n >= 2 and ends >= 1) or n >= 3
-    why = f"{n} sample(s), {ends} supported end(s)" + (", inside a reference intron" if in_intron else "")
+    why = f"{n_samples(iso)} sample(s), {ends} supported end(s)" + (", inside a reference intron" if in_intron else "")
     return ok, why
 
 
@@ -207,7 +220,7 @@ def run_noncoding(ann: AnnotationSet, isos: Dict[str, Isoform], candidates: Iter
                 out.append(NcDecision(k, 106, "", []))
                 continue
             label, _ = coding_label(iso, [], genome, table, p)
-            ok, why = evidence_ok(iso, label, sites, False)
+            ok, why = evidence_ok(iso, label, sites, False, p.MIN_SAMPLE_FRACTION)
             if not ok:
                 out.append(NcDecision(k, 103, why, []))
                 continue
@@ -227,7 +240,7 @@ def run_noncoding(ann: AnnotationSet, isos: Dict[str, Isoform], candidates: Iter
             out.append(NcDecision(k, 104, f"assembles with {hit.id}", [g.id]))
             continue
         label, coded = coding_label(iso, [r for r in g.transcripts.values() if r.cds], genome, table, p)
-        ok, why = evidence_ok(iso, label, sites, tx.num_exons == 1 and _in_intron(tx, new))
+        ok, why = evidence_ok(iso, label, sites, tx.num_exons == 1 and _in_intron(tx, new), p.MIN_SAMPLE_FRACTION)
         if not ok:
             out.append(NcDecision(k, 103, why, [g.id]))
             continue

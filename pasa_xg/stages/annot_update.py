@@ -232,7 +232,7 @@ def run(run: Run, s: Settings, prep: Dict[str, Any], coding: Dict[str, Any]) -> 
               "trust_fl": s.trust_fl_status, "nmd": (s.reject_nmd_targets, s.nmd_stop_to_junction),
               "pct_coding": s.min_percent_coding, "fl_orf": s.min_fl_orf_aa, "min_tpm": s.min_tpm, "min_frac": s.min_isoform_fraction,
               "tss_sites": [run.fdigest(x) for x in s.tss_sites], "polya_sites": [run.fdigest(x) for x in s.polya_sites],
-              "site_window": s.site_window, "alt_end_isoforms": s.alt_end_isoforms, "noncoding": s.include_noncoding,
+              "site_window": s.site_window, "alt_end_isoforms": s.alt_end_isoforms, "noncoding": s.include_noncoding, "sample_frac": s.min_sample_fraction,
               "code": s.genetic_code, "stage": "annot_update/2", "src": code_digest("pasa_xg.stages.annot_update", "pasa_xg.annot", "pasa_xg.models", "pasa_xg.genome", "pasa_xg.gff")}
 
     def body(d: str) -> Dict[str, Any]:
@@ -247,6 +247,7 @@ def run(run: Run, s: Settings, prep: Dict[str, Any], coding: Dict[str, Any]) -> 
                              NMD_STOP_TO_JUNCTION=s.nmd_stop_to_junction,
                              MIN_PERCENT_PROT_CODING=s.min_percent_coding,
                              MIN_FL_ORF_SIZE=s.min_fl_orf_aa,
-                             ALT_END_ISOFORMS=s.alt_end_isoforms))
+                             ALT_END_ISOFORMS=s.alt_end_isoforms,
+                             MIN_SAMPLE_FRACTION=s.min_sample_fraction))
 
     return run.run_stage("annot_update", "05_annot_update", inputs, body)

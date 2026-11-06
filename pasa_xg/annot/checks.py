@@ -50,6 +50,7 @@ class Params:
     # polyA sites, the ends where it differs must also be supported. "all": PASA's
     # behavior, every such isoform that passes the protein checks is added.
     ALT_END_ISOFORMS: str = "protein"
+    MIN_SAMPLE_FRACTION: float = 0.01  # noncoding pass: sample minimum is max(2, fraction x n_samples_total)
 
 
 CONSENSUS = {"GT..AG", "GC..AG"}
