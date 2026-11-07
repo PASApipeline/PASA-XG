@@ -20,6 +20,7 @@ from .. import isoforms as iso_mod
 from ..annot.apply import apply_round
 from ..annot.checks import Params
 from ..annot.compare import STATUS, Decision, run_round
+from ..annot import refframe
 from ..annot.noncoding import NC_STATUS, run_noncoding, tie_kind
 from ..annot.structure import introns_of
 from ..annot.sites import POLYA, TSS, SiteIndex, add_isoform_ends, five_prime, load_bed, three_prime
@@ -117,6 +118,8 @@ def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome,
     eligible = {k: v for k, v in isos.items()
                 if v.tpm >= s.min_tpm and v.isoform_fraction >= s.min_isoform_fraction}
     sites = site_index(s, eligible.values())
+    if s.reference_frame_check:
+        refframe.check(eligible, ann, genome, table, sites if len(sites) else None, p, s.min_orf_aa)
     rows: List[Dict[str, Any]] = []
     for k in set(isos) - set(eligible):
         i = isos[k]
@@ -208,6 +211,8 @@ def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome,
         summary.append({"round": rnd, "evaluated": len(nrows), "incorporated": counts["noncoding_isoform"]
                         + counts["noncoding_gene"], "genes_changed": len({r["genes"] for r in nrows if r["valid"]}),
                         **counts})
+    if s.reference_frame_check:
+        refframe.check_models(current, ann, genome, table, sites if len(sites) else None, p, s.min_orf_aa)
     write_conflicts(rows, incorporated, isos, current, os.path.join(out_dir, "annot_update.gene_conflicts.tsv"))
     # final state per isoform: its last evaluation
     table_df = pd.DataFrame(rows)
@@ -232,7 +237,7 @@ def run(run: Run, s: Settings, prep: Dict[str, Any], coding: Dict[str, Any]) -> 
               "trust_fl": s.trust_fl_status, "nmd": (s.reject_nmd_targets, s.nmd_stop_to_junction),
               "pct_coding": s.min_percent_coding, "fl_orf": s.min_fl_orf_aa, "min_tpm": s.min_tpm, "min_frac": s.min_isoform_fraction,
               "tss_sites": [run.fdigest(x) for x in s.tss_sites], "polya_sites": [run.fdigest(x) for x in s.polya_sites],
-              "site_window": s.site_window, "alt_end_isoforms": s.alt_end_isoforms, "noncoding": s.include_noncoding, "sample_frac": s.min_sample_fraction,
+              "site_window": s.site_window, "alt_end_isoforms": s.alt_end_isoforms, "noncoding": s.include_noncoding, "sample_frac": s.min_sample_fraction, "refframe": s.reference_frame_check,
               "code": s.genetic_code, "stage": "annot_update/2", "src": code_digest("pasa_xg.stages.annot_update", "pasa_xg.annot", "pasa_xg.models", "pasa_xg.genome", "pasa_xg.gff")}
 
     def body(d: str) -> Dict[str, Any]:

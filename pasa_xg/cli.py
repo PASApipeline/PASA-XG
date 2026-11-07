@@ -89,6 +89,12 @@ def _run_parser(p: argparse.ArgumentParser) -> None:
                         "into) a model even when other isoforms support that model's own "
                         "structure. By default such a model is kept and the new structure "
                         "is added as an alternative isoform.")
+    u.add_argument("--no_reference_frame_check", dest="reference_frame_check", action="store_false",
+                   help="keep every isoform's ORF as called. By default, an isoform holding the gene's start "
+                        "codon upstream of its ORF is read from that start (noncoding when that ORF is short or "
+                        "an NMD target), and an isoform whose 5' or 3' end falls inside the reference CDS "
+                        "without TSS / polyA support is read in the reference frame as a partial "
+                        "(cds_start_NF / cds_end_NF) instead of from a downstream Met or a new stop")
     u.add_argument("--min_sample_fraction", type=float, default=0.01,
                    help="noncoding pass, for isoforms carrying n_samples and n_samples_total (multi-sample "
                         "merged catalogs): the evidence filter's minimum of 2 samples becomes "

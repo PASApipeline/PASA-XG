@@ -123,13 +123,14 @@ def coding_label(iso: Isoform, models: List[Transcript], genome: Genome, table, 
     if nmd:
         return "nmd", None
     core = pep.rstrip("*")
+    label = "partial" if iso.orf is not None and not iso.orf.complete else "low"
     for m in models:
         ref = genome.protein(m, table).rstrip("*")
         if core and core in ref:
-            return "low", t
+            return label, t
         ok, _ = C.compare_proteins(m, t, genome, table, p, True, not pep.startswith("M"), not pep.endswith("*"))
         if ok:
-            return "low", t
+            return label, t
     return "none", None
 
 
@@ -201,7 +202,8 @@ def run_noncoding(ann: AnnotationSet, isos: Dict[str, Isoform], candidates: Iter
 
     def tag(t: Transcript, iso: Isoform, coding: str) -> None:
         tss, pa = supported_ends(iso, sites)
-        t.attrs = {"transcript_type": "pasa_low_coding" if coding == "low" else "pasa_noncoding",
+        t.attrs = {"transcript_type": {"low": "pasa_low_coding", "partial": "pasa_partial_coding"}.get(coding, "pasa_noncoding"),
+                   **{k: iso.tx.attrs[k] for k in ("cds_start_NF", "cds_end_NF", "pasa_xg_orf") if k in iso.tx.attrs},
                    "pasa_xg_coding": coding, "pasa_xg_update": "noncoding_isoform",
                    "pasa_xg_round": "noncoding", "pasa_xg_isoform": iso.id,
                    **({"pasa_xg_run": run_label} if run_label else {}),

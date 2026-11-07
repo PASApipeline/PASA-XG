@@ -1,0 +1,214 @@
+"""Reference-frame check of ORFs, against the gene's reference coding transcripts.
+
+pytransdecoder (and the update's own ORF calls on merged structures) take the best ORF of a sequence
+on its own. Against the reference coding transcripts that share introns with it, two cases call for
+a different reading:
+
+- The transcript holds a reference start codon upstream of its ORF (the 5'-most one present). A
+  scanning ribosome meets that ATG first, and here it opens a different, overlapping ORF. When the
+  ORF from the reference ATG is long enough and not an NMD target it becomes the ORF; otherwise the
+  transcript is taken as noncoding (no CDS).
+- The transcript is end-incomplete in the reference CDS (best-matching reference): it starts after the
+  reference start codon with no TSS support, or ends before the reference stop codon, with no polyA
+  support and no stop codon in the reference frame. Its ORF is then read in the reference frame (from
+  the first in-frame codon) to the first stop, so it is partial (cds_start_NF / cds_end_NF), and a
+  downstream Met or a new stop cannot make a new protein.
+
+check() applies this to the input isoforms before the update (a partial ORF is not complete, so the
+isoform takes PASA's non-full-length path); check_models() to the transcripts the update added or
+changed, whose CDS the update may have called again.
+"""
+
+from __future__ import annotations
+
+import logging
+from collections import Counter
+from dataclasses import dataclass
+from typing import Dict, Iterable, List, Optional, Tuple
+
+from ..genome import Genome
+from ..isoforms import Isoform, Orf
+from ..models import AnnotationSet, Transcript
+from . import checks as C
+from .sites import POLYA, TSS, SiteIndex, five_prime, three_prime
+from .structure import introns_of
+
+log = logging.getLogger("pasa_xg")
+
+
+def _order(t: Transcript):
+    return t.exons if t.strand == "+" else list(reversed(t.exons))
+
+
+def g2t(t: Transcript, pos: int) -> Optional[int]:
+    """0-based transcript offset of genomic position pos, or None when pos is not exonic."""
+    off = 0
+    for a, b in _order(t):
+        if a <= pos <= b:
+            return off + (pos - a if t.strand == "+" else b - pos)
+        off += b - a + 1
+    return None
+
+
+def cds_start(t: Transcript) -> int:
+    return t.cds[0][0] if t.strand == "+" else t.cds[-1][1]
+
+
+def cds_stop(t: Transcript) -> int:
+    return t.cds[-1][1] if t.strand == "+" else t.cds[0][0]
+
+
+def related_references(t: Transcript, ann: AnnotationSet) -> List[Tuple[Tuple[int, int, int], Transcript]]:
+    """Same-strand coding reference transcripts sharing an intron with t (CDS overlap for an unspliced t),
+    with a sort key: shared introns, CDS overlap, CDS length."""
+    ints = set(introns_of(t.exons))
+    out = []
+    for g in ann.overlapping(t.contig, t.start, t.end, strand=t.strand):
+        for r in g.transcripts.values():
+            if not r.cds or r.id == t.id:
+                continue
+            shared = len(ints & set(introns_of(r.exons)))
+            cds_ov = sum(max(0, min(b, d) - max(a, c) + 1) for a, b in t.exons for c, d in r.cds)
+            if (ints and shared == 0) or cds_ov == 0:
+                continue
+            out.append(((shared, cds_ov, sum(b - a + 1 for a, b in r.cds)), r))
+    return sorted(out, key=lambda kr: kr[0], reverse=True)
+
+
+def _cds_phase(r: Transcript, pos: int) -> Optional[int]:
+    """Position of genomic pos within its codon of r's CDS (0, 1, 2), or None outside the CDS."""
+    off = 0
+    for a, b in (r.cds if r.strand == "+" else list(reversed(r.cds))):
+        if a <= pos <= b:
+            off += pos - a if r.strand == "+" else b - pos
+            return (off - r.cds_offset) % 3
+        off += b - a + 1
+    return None
+
+
+def _positions(t: Transcript) -> Iterable[int]:
+    for a, b in _order(t):
+        yield from (range(a, b + 1) if t.strand == "+" else range(b, a - 1, -1))
+
+
+def _read(seq: str, start: int, table: Dict[str, str]) -> Tuple[int, bool]:
+    j = start
+    while j + 3 <= len(seq):
+        if table.get(seq[j:j + 3]) == "*":
+            return j + 3, True
+        j += 3
+    return j, False
+
+
+@dataclass
+class Call:
+    why: str                      # reference_start | reference_start_uorf | reference_frame_partial
+    start: int = 0                # 0-based half-open ORF on the transcript sequence
+    end: int = 0
+    has_start: bool = True
+    has_stop: bool = True
+
+
+def decide(t: Transcript, refs, seq: str, table: Dict[str, str], p: C.Params, tss: bool, polya: bool,
+           min_aa: int) -> Optional[Call]:
+    """What the reference frame says about t's current CDS (None: keep it)."""
+    if not t.cds or not refs:
+        return None
+    own = g2t(t, cds_start(t))
+    if own is None:
+        return None
+    atgs = sorted({o for _, r in refs for o in [g2t(t, cds_start(r))] if o is not None and seq[o:o + 3] == "ATG"})
+    if atgs and atgs[0] < own:
+        s = atgs[0]
+        e, has_stop = _read(seq, s, table)
+        probe = t.copy(cds=t.segments_for(s + 1, e))
+        if has_stop and (e - s) // 3 - 1 >= min_aa and C.nmd_distance(probe) <= p.NMD_STOP_TO_JUNCTION:
+            return Call("reference_start", s, e, True, True)
+        return Call("reference_start_uorf")
+    r = refs[0][1]
+    rs, re_ = cds_start(r), cds_stop(r)
+    starts_inside = (t.start > rs) if t.strand == "+" else (t.end < rs)
+    ends_inside = (t.end < re_) if t.strand == "+" else (t.start > re_)
+    if not ((starts_inside and not tss) or (ends_inside and not polya)):
+        return None
+    s0 = g2t(t, rs)
+    if s0 is not None and seq[s0:s0 + 3] == "ATG":
+        start, has_start = s0, True
+    else:
+        start = next((i + (3 - ph) % 3 for i, pos in enumerate(_positions(t))
+                      for ph in [_cds_phase(r, pos)] if ph is not None), None)
+        if start is None:
+            return None
+        has_start = False
+    end, has_stop = _read(seq, start, table)
+    if has_start and has_stop:
+        return None     # a complete ORF in the reference frame: nothing partial about it
+    return Call("reference_frame_partial", start, end, has_start, has_stop)
+
+
+def _apply(t: Transcript, c: Call) -> None:
+    if c.why == "reference_start_uorf":
+        t.cds = []
+        t.attrs = {**t.attrs, "pasa_xg_orf": c.why}
+        return
+    t.cds = t.segments_for(c.start + 1, c.end)
+    t.cds_offset = 0
+    t.attrs = {**{k: v for k, v in t.attrs.items() if k not in ("cds_start_NF", "cds_end_NF")}, "pasa_xg_orf": c.why,
+               **({"cds_start_NF": "true"} if not c.has_start else {}),
+               **({"cds_end_NF": "true"} if not c.has_stop else {})}
+
+
+def _label(c: Call) -> str:
+    if c.why == "reference_start_uorf":
+        return "noncoding: reference start opens a short / NMD ORF"
+    if c.why == "reference_start":
+        return "ORF from the reference start codon"
+    return "partial in the reference frame"
+
+
+def check(isos: Dict[str, Isoform], ann: AnnotationSet, genome: Genome, table: Dict[str, str],
+          sites: Optional[SiteIndex], p: C.Params, min_aa: int = 100) -> Counter:
+    """The check on input isoforms with an ORF (in place); counts by outcome."""
+    from .noncoding import supported_ends   # avoids an import cycle
+    n: Counter = Counter()
+    for iso in isos.values():
+        t = iso.tx
+        if iso.orf is None or not t.cds:
+            continue
+        tss, polya = supported_ends(iso, sites)
+        c = decide(t, related_references(t, ann), genome.transcript_seq(t), table, p, tss, polya, min_aa)
+        if c is None:
+            continue
+        _apply(t, c)
+        if c.why == "reference_start_uorf":
+            iso.orf = None
+        else:
+            kind = ("complete" if c.has_stop else "3prime_partial") if c.has_start else \
+                ("5prime_partial" if c.has_stop else "internal")
+            iso.orf = Orf(f"{iso.id}.refframe", kind, c.start + 1, c.end, (c.end - c.start) // 3 - c.has_stop)
+        n[_label(c)] += 1
+    log.info("reference-frame check, isoforms: %s", dict(n))
+    return n
+
+
+def check_models(new: AnnotationSet, start: AnnotationSet, genome: Genome, table: Dict[str, str],
+                 sites: Optional[SiteIndex], p: C.Params, min_aa: int = 100) -> Counter:
+    """The check on the update's added transcripts and those whose CDS it changed (in place), against
+    the starting annotation; a transcript left without CDS is labeled pasa_xg_coding 'none'."""
+    old = {t.id: t for t in start.transcripts()}
+    n: Counter = Counter()
+    for t in new.transcripts():
+        o = old.get(t.id)
+        if not t.cds or (o is not None and o.cds == t.cds):
+            continue    # reference models keep their CDS (UTR updates included)
+        tss = sites is not None and sites.near(t.contig, t.strand, TSS, five_prime(t)) is not None
+        polya = sites is not None and sites.near(t.contig, t.strand, POLYA, three_prime(t)) is not None
+        c = decide(t, related_references(t, start), genome.transcript_seq(t), table, p, tss, polya, min_aa)
+        if c is None:
+            continue
+        _apply(t, c)
+        if not t.cds:
+            t.attrs = {**t.attrs, "pasa_xg_coding": "none"}
+        n[_label(c)] += 1
+    log.info("reference-frame check, updated models: %s", dict(n))
+    return n

@@ -232,3 +232,26 @@ decisions are one more round in `annot_update.decisions.tsv`. Statuses: 101 adde
 - **Pilot** (E5 random-10, chr22, additive): 1,108 isoforms added to known genes (625 low, 244
   NMD, 239 none), 68 in novel noncoding genes. Antisense calls in round 1 fell from 1,861 to 663
   with the relabel fix.
+
+## Reference-frame check (2026-11-06)
+
+`annot/refframe.py`, on by default (`--no_reference_frame_check` turns it off). It checks ORFs against the reference coding
+transcripts that share introns with the isoform, twice: on the input isoforms before round 1, and on the transcripts the update
+added or whose CDS it changed. Reference models whose CDS is unchanged are never touched.
+
+- **Reference start upstream.** The transcript holds a reference start codon (the 5'-most present) upstream of its ORF. pyTD's
+  ORF is right for the sequence, but the reference ATG opens a different, overlapping ORF, which a scanning ribosome meets first.
+  - If the ORF from that ATG is >= `--min_orf_aa` and not an NMD target, it becomes the ORF.
+  - Otherwise the transcript is noncoding (`pasa_xg_orf "reference_start_uorf"`).
+- **End-incomplete.** The transcript starts after the reference start codon without TSS support, or ends before the reference
+  stop without polyA support. It is then read in the reference frame. When the start or the stop is missing, the ORF is partial
+  (`cds_start_NF` / `cds_end_NF`, `pasa_xg_orf "reference_frame_partial"`).
+  - A partial isoform takes PASA's non-full-length path.
+  - In the noncoding pass it is labeled `pasa_xg_coding "partial"` (`transcript_type "pasa_partial_coding"`), under the stricter
+    evidence rule.
+
+On the chr22 475-sample pilot (additive, >= 1% of samples), the check changed:
+- input isoforms: 5,605 to noncoding, 3,814 to partial, 117 to the reference-start ORF;
+- updated models: 1,052 to partial, 618 to noncoding, 7 to the reference-start ORF.
+
+New proteins that skip the reference start fell from 895 to 22.
