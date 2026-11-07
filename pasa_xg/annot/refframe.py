@@ -4,8 +4,8 @@ pytransdecoder (and the update's own ORF calls on merged structures) take the be
 on its own. Against the reference coding transcripts that share introns with it, two cases call for
 a different reading:
 
-- The transcript holds a reference start codon upstream of its ORF (the 5'-most one present). A
-  scanning ribosome meets that ATG first, and here it opens a different, overlapping ORF. When the
+- The transcript holds the best-matching reference's start codon upstream of its ORF. A scanning
+  ribosome meets that ATG first, and here it opens a different, overlapping ORF. When the
   ORF from the reference ATG is long enough and not an NMD target it becomes the ORF; otherwise the
   transcript is taken as noncoding (no CDS).
 - The transcript is end-incomplete in the reference CDS (best-matching reference): it starts after the
@@ -117,9 +117,11 @@ def decide(t: Transcript, refs, seq: str, table: Dict[str, str], p: C.Params, ts
     own = g2t(t, cds_start(t))
     if own is None:
         return None
-    atgs = sorted({o for _, r in refs for o in [g2t(t, cds_start(r))] if o is not None and seq[o:o + 3] == "ATG"})
-    if atgs and atgs[0] < own:
-        s = atgs[0]
+    # the best-matching reference's start codon (any reference's 5'-most ATG fires on 2.5% of GENCODE's
+    # own protein-coding transcripts, the best reference's on 1.0%)
+    r_atg = g2t(t, cds_start(refs[0][1]))
+    if r_atg is not None and seq[r_atg:r_atg + 3] == "ATG" and r_atg < own:
+        s = r_atg
         e, has_stop = _read(seq, s, table)
         probe = t.copy(cds=t.segments_for(s + 1, e))
         if has_stop and (e - s) // 3 - 1 >= min_aa and C.nmd_distance(probe) <= p.NMD_STOP_TO_JUNCTION:
@@ -219,6 +221,25 @@ def check_models(new: AnnotationSet, start: AnnotationSet, genome: Genome, table
             t.attrs = {**t.attrs, "pasa_xg_coding": "none"}
         n[_label(c)] += 1
     log.info("reference-frame check, updated models: %s", dict(n))
+    return n
+
+
+def keep_reference_cds(new: AnnotationSet, start: AnnotationSet, genome: Genome, table: Dict[str, str]) -> int:
+    """A reference transcript whose protein the update left unchanged keeps its own CDS coordinates (an
+    update can trim a partial model's incomplete codon or reset its start offset without changing the
+    protein); only when the original CDS still lies in the transcript's exons."""
+    old = {t.id: t for t in start.transcripts()}
+    n = 0
+    for t in new.transcripts():
+        o = old.get(t.id)
+        if o is None or not o.cds or not t.cds or (o.cds == t.cds and o.cds_offset == t.cds_offset):
+            continue
+        if not all(any(a <= x and y <= b for a, b in t.exons) for x, y in o.cds):
+            continue
+        if genome.protein(t, table).rstrip("*") == genome.protein(o, table).rstrip("*"):
+            t.cds, t.cds_offset = list(o.cds), o.cds_offset
+            n += 1
+    log.info("reference transcripts with an unchanged protein given back their CDS: %d", n)
     return n
 
 

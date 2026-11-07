@@ -93,3 +93,13 @@ def test_partial_tags_follow_the_cds(tmp_path):
     refframe.sync_partial_tags(new, ann, g, TABLE)
     assert ref.attrs["tag"] == "basic" and "cds_end_NF" not in ref.attrs
     assert "cds_start_NF" in frag.attrs["tag"].split(",")
+
+
+def test_a_reference_with_the_same_protein_keeps_its_cds_coordinates(tmp_path):
+    ex, g, ann = _gene(tmp_path)
+    new = ann.copy(label="u")
+    ref = new.genes["G1"].transcripts["G1.t1"]
+    orig = ann.genes["G1"].transcripts["G1.t1"]
+    orig.cds = orig.cds[:-1] + [(orig.cds[-1][0], orig.cds[-1][1] + 2)]   # 2 bases past the stop: same protein
+    assert ref.cds != orig.cds
+    assert refframe.keep_reference_cds(new, ann, g, TABLE) == 1 and ref.cds == orig.cds
