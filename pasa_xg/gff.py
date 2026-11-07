@@ -203,7 +203,8 @@ def write_gtf(genes: Iterable[Gene], fh: TextIO, source: str = "PASA-XG") -> Non
     for g in sorted(genes, key=lambda g: (g.contig, g.start, g.id)):
         for t in sorted(g.transcripts.values(), key=lambda t: (t.start, t.id)):
             ids = f'gene_id "{g.id}"; transcript_id "{t.id}";'
-            sites = "".join(f' {k} "{t.attrs[k]}";' for k in GTF_SITE_ATTRS + ("pasa_xg_coding",) if k in t.attrs)
+            sites = "".join(f' {k} "{t.attrs[k]}";' for k in GTF_SITE_ATTRS + ("pasa_xg_coding", "pasa_xg_orf") if k in t.attrs)
+            sites += "".join(f' tag "{k}";' for k in ("cds_start_NF", "cds_end_NF") if t.attrs.get(k) == "true")
             if "pasa_xg_gene_class" in g.attrs:
                 sites += f' pasa_xg_gene_class "{g.attrs["pasa_xg_gene_class"]}";'
             fh.write(f"{t.contig}\t{source}\ttranscript\t{t.start}\t{t.end}\t.\t{t.strand}\t.\t{ids}{sites}\n")
