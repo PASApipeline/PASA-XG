@@ -213,6 +213,7 @@ def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome,
                         **counts})
     if s.reference_frame_check:
         refframe.check_models(current, ann, genome, table, sites if len(sites) else None, p, s.min_orf_aa)
+    refframe.sync_partial_tags(current, ann, genome, table)
     write_conflicts(rows, incorporated, isos, current, os.path.join(out_dir, "annot_update.gene_conflicts.tsv"))
     # final state per isoform: its last evaluation
     table_df = pd.DataFrame(rows)

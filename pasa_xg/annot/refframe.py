@@ -65,7 +65,7 @@ def related_references(t: Transcript, ann: AnnotationSet) -> List[Tuple[Tuple[in
     out = []
     for g in ann.overlapping(t.contig, t.start, t.end, strand=t.strand):
         for r in g.transcripts.values():
-            if not r.cds or r.id == t.id:
+            if not r.cds:
                 continue
             shared = len(ints & set(introns_of(r.exons)))
             cds_ov = sum(max(0, min(b, d) - max(a, c) + 1) for a, b in t.exons for c, d in r.cds)
@@ -206,9 +206,47 @@ def check_models(new: AnnotationSet, start: AnnotationSet, genome: Genome, table
         c = decide(t, related_references(t, start), genome.transcript_seq(t), table, p, tss, polya, min_aa)
         if c is None:
             continue
+        if o is not None:
+            # a reference transcript keeps its own CDS (and its structure, when the CDS no longer fits)
+            if not all(any(a <= x and y <= b for a, b in t.exons) for x, y in o.cds):
+                t.exons = list(o.exons)
+            t.cds, t.cds_offset = list(o.cds), o.cds_offset
+            t.attrs = {**t.attrs, "pasa_xg_orf": "reference_cds_kept"}
+            n["reference transcript: its CDS kept"] += 1
+            continue
         _apply(t, c)
         if not t.cds:
             t.attrs = {**t.attrs, "pasa_xg_coding": "none"}
         n[_label(c)] += 1
     log.info("reference-frame check, updated models: %s", dict(n))
+    return n
+
+
+def sync_partial_tags(new: AnnotationSet, start: AnnotationSet, genome: Genome, table: Dict[str, str]) -> Counter:
+    """cds_start_NF / cds_end_NF on every added or CDS-changed transcript from its own sequence (start
+    codon, stop codon), in the attributes and in GENCODE's tag list, so a reference's stale NF tag goes
+    when its CDS is completed and a partial CDS is always marked."""
+    from .checks import tags
+    old = {t.id: t for t in start.transcripts()}
+    n: Counter = Counter()
+    for t in new.transcripts():
+        o = old.get(t.id)
+        if o is not None and o.cds == t.cds:
+            continue
+        tl = [x for x in t.attrs.get("tag", "").split(",") if x and x not in ("cds_start_NF", "cds_end_NF")]
+        attrs = {k: v for k, v in t.attrs.items() if k not in ("cds_start_NF", "cds_end_NF")}
+        if t.cds:
+            pep = genome.protein(t, table)
+            same_start = o is not None and o.cds and cds_start(o) == cds_start(t) and "non_ATG_start" in tags(o)
+            for k, ok in (("cds_start_NF", pep.startswith("M") or same_start), ("cds_end_NF", pep.endswith("*"))):
+                if not ok:
+                    attrs[k] = "true"
+                    tl.append(k)
+                    n[k] += 1
+        if tl:
+            attrs["tag"] = ",".join(tl)
+        else:
+            attrs.pop("tag", None)
+        t.attrs = attrs
+    log.info("partial CDS tags: %s", dict(n))
     return n

@@ -129,6 +129,13 @@ def align_proteins(a: str, b: str) -> Tuple[float, int]:
     return (100.0 * c.identities / length if length else 0.0), length
 
 
+FROZEN_CDS_TAGS = {"seleno", "non_ATG_start"}   # GENCODE tags: the CDS can't be re-derived from the sequence
+
+
+def tags(t: Transcript) -> set:
+    return {x for x in t.attrs.get("tag", "").split(",") if x}
+
+
 def compare_proteins(old: Transcript, new: Transcript, genome: Genome, table: Dict[str, str],
                      p: Params, fl_alt_splice: bool = False,
                      new_partial5: bool = False, new_partial3: bool = False) -> Tuple[bool, str]:
@@ -138,6 +145,12 @@ def compare_proteins(old: Transcript, new: Transcript, genome: Genome, table: Di
     new_pep = genome.protein(new, table)
     if not old_pep or not new_pep:
         return False, "no protein for comparison"
+    if tags(old) & FROZEN_CDS_TAGS and new_pep != old_pep:
+        # a selenoprotein's UGA or a non-ATG start: an ORF call on the sequence would change the protein
+        return False, f"model's CDS is kept ({', '.join(sorted(tags(old) & FROZEN_CDS_TAGS))})"
+    old_complete = (old_pep.startswith("M") or "non_ATG_start" in tags(old)) and old_pep.endswith("*")
+    if old_complete and not (new_pep.startswith("M") and new_pep.endswith("*")):
+        return False, "would replace a complete protein with a partial one"
     errs = validate_gene(new, genome, table, p, new_partial5, new_partial3)
     if errs:
         return False, "; ".join(errs)

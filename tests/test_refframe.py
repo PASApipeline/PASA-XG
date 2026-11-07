@@ -67,3 +67,29 @@ def test_updated_models_are_checked_but_reference_cds_is_kept(tmp_path):
     n = refframe.check_models(new, ann, g, TABLE, None, Params())
     assert ref.cds == ann.genes["G1"].transcripts["G1.t1"].cds
     assert frag.attrs.get("cds_start_NF") == "true" and n["partial in the reference frame"] == 1
+
+
+def test_a_reference_transcript_keeps_its_cds_when_the_check_objects(tmp_path):
+    ex, g, ann = _gene(tmp_path)
+    new = ann.copy(label="u")
+    ref = new.genes["G1"].transcripts["G1.t1"]
+    old_cds = list(ref.cds)
+    shifted_start = ref.segments_for(301, 900)              # an updated CDS starting downstream of the reference ATG
+    ref.cds = [(max(a, shifted_start[0][0]), b) for a, b in ref.cds if b >= shifted_start[0][0]]
+    n = refframe.check_models(new, ann, g, TABLE, None, Params())
+    assert ref.cds == old_cds and ref.attrs["pasa_xg_orf"] == "reference_cds_kept"
+    assert n["reference transcript: its CDS kept"] == 1
+
+
+def test_partial_tags_follow_the_cds(tmp_path):
+    ex, g, ann = _gene(tmp_path)
+    new = ann.copy(label="u")
+    ref = new.genes["G1"].transcripts["G1.t1"]
+    ref.attrs = {"tag": "basic,cds_end_NF"}                 # stale: the CDS is complete
+    frag = ref.copy(id="G1.pxg1", exons=ex[1:], attrs={})
+    frag.cds = frag.segments_for(*longest_orf(g.transcript_seq(frag), TABLE, True, True))
+    new.genes["G1"].transcripts["G1.pxg1"] = frag
+    ann.genes["G1"].transcripts["G1.t1"].cds = ann.genes["G1"].transcripts["G1.t1"].cds[:-1]   # so the CDS differs
+    refframe.sync_partial_tags(new, ann, g, TABLE)
+    assert ref.attrs["tag"] == "basic" and "cds_end_NF" not in ref.attrs
+    assert "cds_start_NF" in frag.attrs["tag"].split(",")

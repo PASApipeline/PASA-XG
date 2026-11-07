@@ -42,7 +42,15 @@ def _gff3_attrs(s: str) -> Dict[str, str]:
 
 
 def _gtf_attrs(s: str) -> Dict[str, str]:
-    return {m.group(1): m.group(2) for m in re.finditer(r'(\S+) "([^"]*)"', s)}
+    """Attributes of a GTF row; a repeated key (GENCODE's tag) keeps every value, comma-joined as in GFF3."""
+    out: Dict[str, str] = {}
+    for m in re.finditer(r'(\S+) "([^"]*)"', s):
+        k, v = m.group(1), m.group(2)
+        if k not in out:
+            out[k] = v
+        elif v not in out[k].split(","):
+            out[k] += "," + v
+    return out
 
 
 def read_annotation(path: str, label: str = "input") -> AnnotationSet:
@@ -195,19 +203,23 @@ def write_gff3(genes: Iterable[Gene], fh: TextIO, source: str = "PASA-XG") -> No
         fh.write("\n")
 
 
-# TSS / polyA evidence carried onto GTF transcript lines (all attributes go to GFF3)
-GTF_SITE_ATTRS = ("tss_support", "polya_support", "alt_tss_sites", "alt_polya_sites")
+def _gtf_value(v) -> str:
+    return str(v).replace('"', "'")
 
 
 def write_gtf(genes: Iterable[Gene], fh: TextIO, source: str = "PASA-XG") -> None:
+    """GTF with every transcript attribute on the transcript line (a comma-joined tag as one tag per value,
+    cds_start_NF / cds_end_NF as tags) plus the gene's name, type and class."""
     for g in sorted(genes, key=lambda g: (g.contig, g.start, g.id)):
         for t in sorted(g.transcripts.values(), key=lambda t: (t.start, t.id)):
             ids = f'gene_id "{g.id}"; transcript_id "{t.id}";'
-            sites = "".join(f' {k} "{t.attrs[k]}";' for k in GTF_SITE_ATTRS + ("pasa_xg_coding", "pasa_xg_orf") if k in t.attrs)
-            sites += "".join(f' tag "{k}";' for k in ("cds_start_NF", "cds_end_NF") if t.attrs.get(k) == "true")
-            if "pasa_xg_gene_class" in g.attrs:
-                sites += f' pasa_xg_gene_class "{g.attrs["pasa_xg_gene_class"]}";'
-            fh.write(f"{t.contig}\t{source}\ttranscript\t{t.start}\t{t.end}\t.\t{t.strand}\t.\t{ids}{sites}\n")
+            attrs = {k: g.attrs[k] for k in ("gene_name", "gene_type", "pasa_xg_gene_class") if k in g.attrs}
+            attrs.update({k: v for k, v in t.attrs.items() if k not in ("tag", "cds_start_NF", "cds_end_NF")})
+            extra = "".join(f' {k} "{_gtf_value(v)}";' for k, v in attrs.items())
+            tags = [x for x in t.attrs.get("tag", "").split(",") if x]
+            tags += [k for k in ("cds_start_NF", "cds_end_NF") if t.attrs.get(k) == "true" and k not in tags]
+            extra += "".join(f' tag "{x}";' for x in tags)
+            fh.write(f"{t.contig}\t{source}\ttranscript\t{t.start}\t{t.end}\t.\t{t.strand}\t.\t{ids}{extra}\n")
             for a, b in t.exons:
                 fh.write(f"{t.contig}\t{source}\texon\t{a}\t{b}\t.\t{t.strand}\t.\t{ids}\n")
             for (a, b), ph in zip(t.cds, t.cds_phases()):
