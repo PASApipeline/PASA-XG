@@ -79,10 +79,10 @@ def _run_parser(p: argparse.ArgumentParser) -> None:
                    help="for curated annotations: never replace, restitch or split an "
                         "existing model, even one the reads don't support (absence of "
                         "evidence in these samples isn't evidence against it). Conflicting "
-                        "structures are added as alternative isoforms or new genes; UTR "
-                        "extensions, compatible CDS refinements and guarded gene merges "
-                        "still apply. Default: PASA's behavior, which replaces unsupported "
-                        "models (suits drafts).")
+                        "structures are added as alternative isoforms or new genes, and genes "
+                        "are not merged (spanning isoforms go to annot_update.gene_conflicts.tsv); "
+                        "UTR extensions and compatible CDS refinements still apply. Default: "
+                        "PASA's behavior, which replaces unsupported models (suits drafts).")
     u.add_argument("--replace_supported_models", dest="protect_supported_models",
                    action="store_false",
                    help="PASA's behavior: let an incompatible isoform replace (or be stitched "

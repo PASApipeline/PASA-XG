@@ -123,7 +123,7 @@ def coding_label(iso: Isoform, models: List[Transcript], genome: Genome, table, 
     if nmd:
         return "nmd", None
     core = pep.rstrip("*")
-    label = "partial" if iso.orf is not None and not iso.orf.complete else "low"
+    label = "low" if pep.startswith("M") and pep.endswith("*") else "partial"   # from the sequence, as the NF tags
     for m in models:
         ref = genome.protein(m, table).rstrip("*")
         if core and core in ref:

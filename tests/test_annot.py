@@ -186,6 +186,13 @@ def test_isoform_spanning_two_genes_merges_them(tmp_path):
     assert d["span"].action == "merge_genes"
     new, applied, _ = apply_round(ann, decisions, splits, "r1", {})
     assert set(new.genes) == {"GA"} and new.genes["GA"].attrs["merged_from"] == "GA,GB"
+    # --additive keeps curated genes apart, and gene segments of IG / TR loci are never merged
+    d, _, _ = decide(ann, [iso("span", "L1", ex, g)], g, Params(ADDITIVE=True))
+    assert d["span"].action != "merge_genes" and "not merged" in d["span"].comment
+    for gid in ("GA", "GB"):
+        ann.genes[gid].attrs["gene_type"] = "IG_V_gene"
+    d, _, _ = decide(ann, [iso("span", "L1", ex, g)], g)
+    assert d["span"].action != "merge_genes" and "immunoglobulin" in d["span"].comment
 
 
 def test_opposite_strand_isoform_is_antisense(tmp_path):

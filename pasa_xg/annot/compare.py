@@ -14,6 +14,7 @@ to actions) and, when it changes the annotation, the proposed structure.
 from __future__ import annotations
 
 import logging
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Set, Tuple
@@ -699,6 +700,14 @@ class RoundComparer:
         deferred: List[Cand] = []
         for c in cands:
             genes = [self.ann.genes[g] for g in c.genes]
+            if any(re.match(r"(IG|TR)_", g.attrs.get("gene_type", "")) for g in genes):
+                # V(D)J-rearranged transcripts join gene segments somatically; not a merge of genes
+                c.set(30 if is_fl else 35, False, "immunoglobulin / T-cell receptor gene segments are not merged")
+                continue
+            if self.p.ADDITIVE:
+                # curated genes stay separate; the isoform goes to the gene-conflicts report
+                c.set(30 if is_fl else 35, False, "--additive: existing genes are not merged")
+                continue
             if any(len([t for t in g.transcripts.values()]) > 1 for g in genes):
                 c.set(30 if is_fl else 35, False, "a matched gene already has alternative isoforms")
                 continue
