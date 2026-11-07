@@ -255,3 +255,15 @@ On the chr22 475-sample pilot (additive, >= 1% of samples), the check changed:
 - updated models: 1,052 to partial, 618 to noncoding, 7 to the reference-start ORF.
 
 New proteins that skip the reference start fell from 895 to 22.
+
+## Tiers (2026-11-07, user decision)
+
+`--noncoding_ends both` (default). A transcript the noncoding pass adds without a complete CDS consistent with its gene
+(`pasa_xg_coding` none / nmd / partial) goes into the main annotation only when both its TSS and its polyA end are supported:
+"capped and polyadenylated", by CAGE / PolyASite sites or LRAA calls.
+- The others that pass the evidence filter go to `annotation.supplemental.gtf` / `.gff3`: lower confidence, a supplemental data
+  set, `pasa_xg_tier "supplemental"`.
+  - Statuses: 107 for a known gene, 108 for a novel noncoding gene.
+  - Their IDs don't collide with the main annotation's, so the two files combine.
+- `low` transcripts (a complete ORF consistent with the gene's protein) stay in the main annotation.
+- `--noncoding_ends any` puts everything in the main annotation.

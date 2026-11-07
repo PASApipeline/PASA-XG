@@ -49,8 +49,11 @@ NC_STATUS = {
     104: "noncoding pass: assembles with an existing transcript",
     105: "noncoding pass: overlaps two or more genes",
     106: "noncoding pass: mono-exonic isoform outside a known gene",
+    107: "noncoding pass: isoform of a known gene, supplemental tier (TSS and polyA not both supported)",
+    108: "noncoding pass: isoform of a novel noncoding gene, supplemental tier (TSS and polyA not both supported)",
 }
-NC_ACTION = {101: "noncoding_isoform", 102: "noncoding_gene"}
+NC_ACTION = {101: "noncoding_isoform", 102: "noncoding_gene",
+             107: "noncoding_isoform_supplemental", 108: "noncoding_gene_supplemental"}
 
 
 @dataclass
@@ -192,23 +195,29 @@ def _in_intron(t: Transcript, ann: AnnotationSet) -> bool:
 
 
 def run_noncoding(ann: AnnotationSet, isos: Dict[str, Isoform], candidates: Iterable[str],
-                  genome: Genome, table, p: C.Params, sites: Optional[SiteIndex], run_label: str = ""
-                  ) -> Tuple[AnnotationSet, List[NcDecision]]:
+                  genome: Genome, table, p: C.Params, sites: Optional[SiteIndex], run_label: str = "",
+                  require_ends: bool = True) -> Tuple[AnnotationSet, List[NcDecision], AnnotationSet]:
+    """The noncoding pass. With require_ends, an added transcript without a complete CDS consistent with
+    its gene (pasa_xg_coding none / nmd / partial) needs a supported TSS and polyA end for the main
+    annotation; otherwise it goes to the supplemental tier (third return value, its own genes)."""
     new = ann.copy(label="noncoding")
     namer = Namer(new)
     out: List[NcDecision] = []
     order = sorted(candidates, key=lambda k: (-(n_samples(isos[k]) or 0), -isos[k].tpm, k))
     novel: List[Tuple[Transcript, Isoform]] = []
 
-    def tag(t: Transcript, iso: Isoform, coding: str) -> None:
+    def tier(iso: Isoform, coding: str) -> str:
         tss, pa = supported_ends(iso, sites)
+        return "main" if coding == "low" or not require_ends or (tss and pa) else "supplemental"
+
+    def tag(t: Transcript, iso: Isoform, coding: str) -> None:
         t.attrs = {"transcript_type": {"low": "pasa_low_coding", "partial": "pasa_partial_coding"}.get(coding, "pasa_noncoding"),
                    **{k: iso.tx.attrs[k] for k in ("cds_start_NF", "cds_end_NF", "pasa_xg_orf") if k in iso.tx.attrs},
                    "pasa_xg_coding": coding, "pasa_xg_update": "noncoding_isoform",
                    "pasa_xg_round": "noncoding", "pasa_xg_isoform": iso.id,
                    **({"pasa_xg_run": run_label} if run_label else {}),
                    **({"n_samples": str(n_samples(iso))} if n_samples(iso) is not None else {}),
-                   "TPM": f"{iso.tpm:.3f}"}
+                   "TPM": f"{iso.tpm:.3f}", "pasa_xg_tier": tier(iso, coding)}
 
     for k in order:
         iso = isos[k]
@@ -234,7 +243,7 @@ def run_noncoding(ann: AnnotationSet, isos: Dict[str, Isoform], candidates: Iter
             t = Transcript(k, "", tx.contig, tx.strand, list(tx.exons))
             tag(t, iso, label)
             novel.append((t, iso))
-            out.append(NcDecision(k, 102, why, []))
+            out.append(NcDecision(k, 102 if t.attrs["pasa_xg_tier"] == "main" else 108, why, []))
             continue
         g = genes[0]
         hit = next((r for r in g.transcripts.values() if merge_compatible(r.exons, tx.exons) is not None), None)
@@ -254,7 +263,7 @@ def run_noncoding(ann: AnnotationSet, isos: Dict[str, Isoform], candidates: Iter
         if t.start < g.start or t.end > g.end:
             new._index = None   # the gene's span grows: rebuild the overlap index
         g.transcripts[tid] = t
-        out.append(NcDecision(k, 101, f"{label}; {why}", [g.id], tid))
+        out.append(NcDecision(k, 101 if t.attrs["pasa_xg_tier"] == "main" else 107, f"{label}; {why}", [g.id], tid))
 
     # novel noncoding genes: isoforms sharing exonic overlap on a strand form one gene
     novel.sort(key=lambda x: (x[0].contig, x[0].strand, x[0].start))
@@ -278,13 +287,31 @@ def run_noncoding(ann: AnnotationSet, isos: Dict[str, Isoform], candidates: Iter
         new.add_gene(Gene(gid, grp[0][0].contig, grp[0][0].strand, tx,
                           {"pasa_xg_novel": "noncoding", **({"antisense_to": ",".join(anti)} if anti else {})}))
     for d in out:
-        if d.status == 102:
+        if d.status in (102, 108):
             d.genes, d.annotation_id = [where[d.isoform_id][0]], where[d.isoform_id][1]
     for g in new:
         g.attrs = {**g.attrs, "pasa_xg_gene_class": "coding" if any(t.cds for t in g.transcripts.values())
                    else "likely_noncoding"}
+    new, supp = split_tiers(new)
     n = defaultdict(int)
     for d in out:
         n[d.action] += 1
     log.info("noncoding pass: %d candidates, %s", len(out), dict(n))
-    return new, out
+    return new, out, supp
+
+
+def split_tiers(ann: AnnotationSet) -> Tuple[AnnotationSet, AnnotationSet]:
+    """Transcripts tagged pasa_xg_tier supplemental move to their own annotation, under a copy of their
+    gene (a gene left without transcripts leaves the main annotation)."""
+    supp = AnnotationSet([], label="supplemental")
+    for g in list(ann):
+        moved = {k: t for k, t in g.transcripts.items() if t.attrs.get("pasa_xg_tier") == "supplemental"}
+        if not moved:
+            continue
+        for k in moved:
+            del g.transcripts[k]
+        supp.add_gene(Gene(g.id, g.contig, g.strand, moved, dict(g.attrs)))
+        if not g.transcripts:
+            ann.remove_gene(g.id)
+    ann._index = None
+    return ann, supp

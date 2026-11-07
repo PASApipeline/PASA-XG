@@ -64,6 +64,7 @@ class Settings:
     site_window: int = 50
     alt_end_isoforms: str = "protein"
     min_sample_fraction: float = 0.01  # noncoding evidence filter, multi-sample catalogs
+    noncoding_ends: str = "both"       # noncoding pass: main tier needs TSS and polyA support ("any": no end rule)
     reference_frame_check: bool = True  # ORFs vs the reference start / frame (annot/refframe.py)
     include_noncoding: bool = True     # noncoding pass after the coding rounds; --coding_only turns it off
 

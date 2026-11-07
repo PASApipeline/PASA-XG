@@ -191,14 +191,14 @@ def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome,
         for r in rows:
             last[r["isoform_id"]] = r
         cands = [k for k in eligible if k not in incorporated and last.get(k, {}).get("action") != "deferred"]
-        current, ncd = run_noncoding(current, eligible, cands, genome, table, p, sites if len(sites) else None,
-                                     s.run_label)
+        current, ncd, supp = run_noncoding(current, eligible, cands, genome, table, p, sites if len(sites) else None,
+                                           s.run_label, require_ends=s.noncoding_ends == "both")
         rnd = len(summary) + 1
         nrows = []
         for d in ncd:
             i, prev = isos[d.isoform_id], last.get(d.isoform_id, {})
             nrows.append({"round": rnd, "isoform_id": d.isoform_id, "lraa_gene": i.tx.gene_id,
-                          "action": d.action, "valid": d.status in (101, 102), "pasa_status": d.status,
+                          "action": d.action, "valid": d.status in (101, 102, 107, 108), "pasa_status": d.status,
                           "pasa_status_descr": NC_STATUS[d.status], "genes": " ".join(d.genes), "model": "",
                           "annotation_id": d.annotation_id, "full_length": i.full_length,
                           "num_exons": i.tx.num_exons, "TPM": i.tpm, "isoform_fraction": i.isoform_fraction,
@@ -209,12 +209,17 @@ def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome,
         rows += nrows
         counts = Counter(r["action"] for r in nrows)
         summary.append({"round": rnd, "evaluated": len(nrows), "incorporated": counts["noncoding_isoform"]
-                        + counts["noncoding_gene"], "genes_changed": len({r["genes"] for r in nrows if r["valid"]}),
+                        + counts["noncoding_gene"], "supplemental": counts["noncoding_isoform_supplemental"]
+                        + counts["noncoding_gene_supplemental"], "genes_changed": len({r["genes"] for r in nrows if r["valid"]}),
                         **counts})
     if s.reference_frame_check:
         refframe.check_models(current, ann, genome, table, sites if len(sites) else None, p, s.min_orf_aa)
     refframe.keep_reference_cds(current, ann, genome, table)
     refframe.sync_partial_tags(current, ann, genome, table)
+    if s.include_noncoding:
+        # lower-confidence noncoding isoforms (supplemental tier), apart from the main annotation
+        refframe.sync_partial_tags(supp, ann, genome, table)
+        write_annotation(supp, genome, table, os.path.join(out_dir, "annotation.supplemental"))
     write_conflicts(rows, incorporated, isos, current, os.path.join(out_dir, "annot_update.gene_conflicts.tsv"))
     # final state per isoform: its last evaluation
     table_df = pd.DataFrame(rows)
@@ -239,7 +244,7 @@ def run(run: Run, s: Settings, prep: Dict[str, Any], coding: Dict[str, Any]) -> 
               "trust_fl": s.trust_fl_status, "nmd": (s.reject_nmd_targets, s.nmd_stop_to_junction),
               "pct_coding": s.min_percent_coding, "fl_orf": s.min_fl_orf_aa, "min_tpm": s.min_tpm, "min_frac": s.min_isoform_fraction,
               "tss_sites": [run.fdigest(x) for x in s.tss_sites], "polya_sites": [run.fdigest(x) for x in s.polya_sites],
-              "site_window": s.site_window, "alt_end_isoforms": s.alt_end_isoforms, "noncoding": s.include_noncoding, "sample_frac": s.min_sample_fraction, "refframe": s.reference_frame_check,
+              "site_window": s.site_window, "alt_end_isoforms": s.alt_end_isoforms, "noncoding": s.include_noncoding, "sample_frac": s.min_sample_fraction, "refframe": s.reference_frame_check, "nc_ends": s.noncoding_ends,
               "code": s.genetic_code, "stage": "annot_update/2", "src": code_digest("pasa_xg.stages.annot_update", "pasa_xg.annot", "pasa_xg.models", "pasa_xg.genome", "pasa_xg.gff")}
 
     def body(d: str) -> Dict[str, Any]:

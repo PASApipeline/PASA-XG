@@ -95,6 +95,12 @@ def _run_parser(p: argparse.ArgumentParser) -> None:
                         "an NMD target), and an isoform whose 5' or 3' end falls inside the reference CDS "
                         "without TSS / polyA support is read in the reference frame as a partial "
                         "(cds_start_NF / cds_end_NF) instead of from a downstream Met or a new stop")
+    u.add_argument("--noncoding_ends", choices=("both", "any"), default="both",
+                   help="noncoding pass: 'both' (default) puts an added transcript without a complete CDS "
+                        "consistent with its gene (pasa_xg_coding none / nmd / partial) in the main annotation "
+                        "only when its TSS and polyA ends are both supported (CAGE / PolyASite sites or LRAA "
+                        "calls); the rest go to annotation.supplemental.gtf/gff3 (pasa_xg_tier supplemental). "
+                        "'any': all in the main annotation")
     u.add_argument("--min_sample_fraction", type=float, default=0.01,
                    help="noncoding pass, for isoforms carrying n_samples and n_samples_total (multi-sample "
                         "merged catalogs): the evidence filter's minimum of 2 samples becomes "

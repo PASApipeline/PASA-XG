@@ -26,7 +26,8 @@ def _iso(name, exons, g, n, coding=True):
 
 
 def run(ann, isos, g):
-    new, d = run_noncoding(ann, {i.id: i for i in isos}, [i.id for i in isos], g, TABLE, Params(), None)
+    new, d, _ = run_noncoding(ann, {i.id: i for i in isos}, [i.id for i in isos], g, TABLE, Params(), None,
+                              require_ends=False)
     return new, {x.isoform_id: x for x in d}
 
 
@@ -148,3 +149,20 @@ def test_sample_minimum_scales_with_the_cohort(tmp_path):
         i.tx.attrs["n_samples_total"] = str(total)
         _, d = run(ann, [i], g)
         assert (d["ri"].action == "noncoding_isoform") == ok, (n, total)
+
+
+def test_noncoding_isoforms_without_both_ends_go_to_the_supplemental_tier(tmp_path):
+    ex, _, g = _locus(tmp_path)
+    ann = AnnotationSet([model("G1", ex, g)])
+    retained = [ex[0], (ex[1][0], ex[2][1])]
+    capped = _iso("capped", retained, g, 3, coding=False)
+    capped.tss = capped.polya = True
+    one_end = _iso("one_end", [ex[0], (ex[1][0], ex[1][1] + 40), ex[2]], g, 3, coding=False)
+    one_end.tss = True
+    isos = {i.id: i for i in (capped, one_end)}
+    new, d, supp = run_noncoding(ann, isos, list(isos), g, TABLE, Params(), None)
+    d = {x.isoform_id: x for x in d}
+    assert d["capped"].status == 101 and d["one_end"].status == 107
+    assert d["capped"].annotation_id in new.genes["G1"].transcripts
+    assert d["one_end"].annotation_id in supp.genes["G1"].transcripts
+    assert d["one_end"].annotation_id not in new.genes["G1"].transcripts
