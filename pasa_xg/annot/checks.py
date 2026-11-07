@@ -3,6 +3,7 @@ compare_updated_proteins, check_UTRs and check_num_UTR_exons)."""
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Dict, List, Sequence, Tuple
@@ -51,6 +52,11 @@ class Params:
     # behavior, every such isoform that passes the protein checks is added.
     ALT_END_ISOFORMS: str = "protein"
     MIN_SAMPLE_FRACTION: float = 0.01  # noncoding pass: sample minimum is max(2, fraction x n_samples_total)
+    # PASA-XG: when an update would change a reference transcript's CDS in place (its structure still
+    # holding the reference CDS): "extend" lets it extend the CDS (the reference protein stays, in frame,
+    # within the new one), "never" keeps the reference CDS, "all" is PASA's behavior. A change not allowed
+    # is added as a new isoform carrying the other coding region. --additive implies "never".
+    REFERENCE_CDS_UPDATES: str = "extend"
 
 
 CONSENSUS = {"GT..AG", "GC..AG"}
@@ -127,6 +133,27 @@ def align_proteins(a: str, b: str) -> Tuple[float, int]:
     c = aln.counts()
     length = c.aligned + c.internal_gaps
     return (100.0 * c.identities / length if length else 0.0), length
+
+
+def cds_extends(old: Transcript, new: Transcript, genome: Genome, table: Dict[str, str]) -> bool:
+    """new's CDS extends old's: every base of old's CDS is in new's, and old's protein lies within
+    new's (so the frame is kept). A shorter or reframed CDS is not an extension."""
+    if not old.cds or not new.cds:
+        return False
+    ob = {x for a, b in old.cds for x in range(a, b + 1)}
+    nb = {x for a, b in new.cds for x in range(a, b + 1)}
+    if not ob <= nb:
+        return False
+    return genome.protein(old, table).rstrip("*") in genome.protein(new, table).rstrip("*")
+
+
+IG_TR_TYPE = re.compile(r"^(IG|TR)_|^[VDJ]_segment|^C_region")   # GENCODE gene_type / RefSeq gene_biotype
+
+
+def is_ig_tr(attrs: Dict[str, str]) -> bool:
+    """Immunoglobulin / T-cell receptor gene segment (or segment pseudogene). Rearranged (V(D)J) BCR / TCR
+    transcripts join segments somatically, so they are not germline isoforms of these genes."""
+    return any(IG_TR_TYPE.match(attrs.get(k, "")) for k in ("gene_type", "gene_biotype"))
 
 
 FROZEN_CDS_TAGS = {"seleno", "non_ATG_start"}   # GENCODE tags: the CDS can't be re-derived from the sequence

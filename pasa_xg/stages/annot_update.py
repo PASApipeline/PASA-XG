@@ -18,8 +18,11 @@ import pandas as pd
 
 from .. import isoforms as iso_mod
 from ..annot.apply import apply_round
-from ..annot.checks import Params
+from ..annot.checks import Params, is_ig_tr
 from ..annot.compare import STATUS, Decision, run_round
+
+IG_TR_STATUS = 50
+STATUS = {**STATUS, IG_TR_STATUS: "isoform on an immunoglobulin / T-cell receptor gene segment: left as annotated"}
 from ..annot import refframe
 from ..annot.noncoding import NC_STATUS, run_noncoding, tie_kind
 from ..annot.structure import introns_of
@@ -111,12 +114,33 @@ def write_conflicts(rows: List[Dict[str, Any]], incorporated: Set[str], isos, an
                     ", ".join(f"{n} {k}" for k, n in df["kind"].value_counts().items()), os.path.basename(path))
 
 
+def ig_tr_isoforms(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform]) -> Dict[str, str]:
+    """Isoforms whose exons overlap an immunoglobulin / T-cell receptor gene segment on their strand, with
+    those genes. Rearranged BCR / TCR transcripts join segments somatically: PASA-XG leaves these genes
+    as annotated and does not use the isoforms (no updates, new isoforms or novel genes)."""
+    out = {}
+    for k, i in isos.items():
+        t = i.tx
+        hits = [g.id for g in ann.overlapping(t.contig, t.start, t.end, strand=t.strand)
+                if (is_ig_tr(g.attrs) or any(is_ig_tr(r.attrs) for r in g.transcripts.values()))
+                and any(a <= d and c <= b for r in g.transcripts.values() for a, b in r.exons for c, d in t.exons)]
+        if hits:
+            out[k] = " ".join(hits)
+    return out
+
+
 def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome, s: Settings,
            out_dir: str, p: Params) -> Dict[str, Any]:
+    os.makedirs(out_dir, exist_ok=True)
     table = codon_table(s.genetic_code)
     expression = {k: {"TPM": v.tpm} for k, v in isos.items()}
     eligible = {k: v for k, v in isos.items()
                 if v.tpm >= s.min_tpm and v.isoform_fraction >= s.min_isoform_fraction}
+    ig_tr = ig_tr_isoforms(ann, eligible)
+    eligible = {k: v for k, v in eligible.items() if k not in ig_tr}
+    if ig_tr:
+        log.info("%d isoforms on immunoglobulin / T-cell receptor gene segments: not used", len(ig_tr))
+    reference_ids = {t.id for t in ann.transcripts()}
     sites = site_index(s, eligible.values())
     if s.reference_frame_check:
         refframe.check(eligible, ann, genome, table, sites if len(sites) else None, p, s.min_orf_aa)
@@ -126,6 +150,13 @@ def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome,
         rows.append({"round": 0, "isoform_id": k, "lraa_gene": i.tx.gene_id, "action": "below_threshold",
                      "valid": False, "pasa_status": 100, "pasa_status_descr": STATUS[100],
                      "genes": "", "model": "", "annotation_id": "", "full_length": i.full_length,
+                     "num_exons": i.tx.num_exons, "TPM": i.tpm,
+                     "isoform_fraction": i.isoform_fraction, "comment": ""})
+    for k, genes in ig_tr.items():
+        i = isos[k]
+        rows.append({"round": 0, "isoform_id": k, "lraa_gene": i.tx.gene_id, "action": "ig_tr_segment",
+                     "valid": False, "pasa_status": IG_TR_STATUS, "pasa_status_descr": STATUS[IG_TR_STATUS],
+                     "genes": genes, "model": "", "annotation_id": "", "full_length": i.full_length,
                      "num_exons": i.tx.num_exons, "TPM": i.tpm,
                      "isoform_fraction": i.isoform_fraction, "comment": ""})
     incorporated: Set[str] = set()
@@ -141,7 +172,8 @@ def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome,
         os.makedirs(rdir, exist_ok=True)
         decisions, splits, rc = run_round(current, [eligible[k] for k in sorted(targets)],
                                           genome, table, p, support, fl_models,
-                                          all_isoforms=eligible.values(), sites=sites)
+                                          all_isoforms=eligible.values(), sites=sites,
+                                          reference_ids=reference_ids)
         label = f"round_{rnd:02d}"
         new, applied, changed = apply_round(current, decisions, splits, label, expression, s.run_label,
                                             alt_sites=rc.alt_sites)
@@ -245,7 +277,8 @@ def run(run: Run, s: Settings, prep: Dict[str, Any], coding: Dict[str, Any]) -> 
               "pct_coding": s.min_percent_coding, "fl_orf": s.min_fl_orf_aa, "min_tpm": s.min_tpm, "min_frac": s.min_isoform_fraction,
               "tss_sites": [run.fdigest(x) for x in s.tss_sites], "polya_sites": [run.fdigest(x) for x in s.polya_sites],
               "site_window": s.site_window, "alt_end_isoforms": s.alt_end_isoforms, "noncoding": s.include_noncoding, "sample_frac": s.min_sample_fraction, "refframe": s.reference_frame_check, "nc_ends": s.noncoding_ends,
-              "code": s.genetic_code, "stage": "annot_update/2", "src": code_digest("pasa_xg.stages.annot_update", "pasa_xg.annot", "pasa_xg.models", "pasa_xg.genome", "pasa_xg.gff")}
+              "ref_cds": s.reference_cds_updates, "min_aa": s.min_orf_aa,
+              "code": s.genetic_code, "stage": "annot_update/3", "src": code_digest("pasa_xg.stages.annot_update", "pasa_xg.annot", "pasa_xg.models", "pasa_xg.genome", "pasa_xg.gff")}
 
     def body(d: str) -> Dict[str, Any]:
         with open(prep["annotation_models_path"], "rb") as fh:
@@ -260,6 +293,7 @@ def run(run: Run, s: Settings, prep: Dict[str, Any], coding: Dict[str, Any]) -> 
                              MIN_PERCENT_PROT_CODING=s.min_percent_coding,
                              MIN_FL_ORF_SIZE=s.min_fl_orf_aa,
                              ALT_END_ISOFORMS=s.alt_end_isoforms,
-                             MIN_SAMPLE_FRACTION=s.min_sample_fraction))
+                             MIN_SAMPLE_FRACTION=s.min_sample_fraction,
+                             REFERENCE_CDS_UPDATES=s.reference_cds_updates))
 
     return run.run_stage("annot_update", "05_annot_update", inputs, body)

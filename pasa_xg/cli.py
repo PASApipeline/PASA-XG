@@ -49,9 +49,18 @@ def _run_parser(p: argparse.ArgumentParser) -> None:
     c.add_argument("--transdecoder_cmd", default="pytransdecoder",
                    help="pytransdecoder command (PyPI pytransdecoder >= 0.2.1)")
     c.add_argument("--genetic_code", default="Universal")
-    c.add_argument("--min_orf_aa", type=int, default=100)
+    c.add_argument("--min_orf_aa", type=int, default=50,
+                   help="shortest ORF (aa); pytransdecoder holds ORFs under 100 codons to a short-ORF "
+                        "frame-contrast test unless homology supports them")
+    c.add_argument("--homology_proteins",
+                   help="protein FASTA (e.g. the reference proteome, or proteins of related species): "
+                        "the long ORFs are searched against it with diamond blastp and the hits passed to "
+                        "pytransdecoder (--retain_blastp_hits), so ORFs with homology are kept, short ones "
+                        "included, and homology informs start codons")
+    c.add_argument("--diamond_cmd", default="diamond")
     c.add_argument("--pfam_hits", help="hmmscan --domtblout of longest_orfs.pep against Pfam")
-    c.add_argument("--blastp_hits", help="blastp -outfmt 6 of longest_orfs.pep")
+    c.add_argument("--blastp_hits", help="blastp -outfmt 6 of longest_orfs.pep (added to the "
+                                         "--homology_proteins hits)")
 
     u = p.add_argument_group("annotation update")
     u.add_argument("--max_rounds", type=int, default=3)
@@ -81,8 +90,16 @@ def _run_parser(p: argparse.ArgumentParser) -> None:
                         "evidence in these samples isn't evidence against it). Conflicting "
                         "structures are added as alternative isoforms or new genes, and genes "
                         "are not merged (spanning isoforms go to annot_update.gene_conflicts.tsv); "
-                        "UTR extensions and compatible CDS refinements still apply. Default: "
+                        "UTR extensions still apply; a reference CDS is never changed in place (another "
+                        "coding region on its structure is added as a new isoform). Default: "
                         "PASA's behavior, which replaces unsupported models (suits drafts).")
+    u.add_argument("--reference_cds_updates", choices=("extend", "never", "all"), default="extend",
+                   help="when an update would change a reference transcript's CDS in place: 'extend' "
+                        "(default) allows an extension (the reference protein stays, in frame, within the "
+                        "new one, e.g. an upstream in-frame start codon) but never a shorter or reframed "
+                        "CDS; 'never' keeps every reference CDS; 'all' is PASA's behavior. A change not "
+                        "allowed is added as a new isoform with that coding region. --additive implies "
+                        "'never'.")
     u.add_argument("--replace_supported_models", dest="protect_supported_models",
                    action="store_false",
                    help="PASA's behavior: let an incompatible isoform replace (or be stitched "

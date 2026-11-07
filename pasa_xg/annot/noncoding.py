@@ -12,7 +12,9 @@ not incorporate and adds those with a new structure and enough evidence:
 
 Labels: pasa_xg_coding "low" (the isoform's ORF is the gene's product or a contiguous part of it,
 and not an NMD target: the CDS is kept), "nmd" (complete ORF, stop codon upstream of the last
-junction) or "none". Every gene gets pasa_xg_gene_class "coding" or "likely_noncoding".
+junction: an NMD candidate, transcript_type nonsense_mediated_decay; the CDS is kept when the ORF is
+in the frame of one of the gene's coding transcripts at its start codon, as GENCODE annotates them)
+or "none". Every gene gets pasa_xg_gene_class "coding" or "likely_noncoding".
 
 Evidence filter, only for multi-sample merged catalogs: when an isoform carries n_samples (a
 GTF attribute, e.g. from the E5 Isopedia merge) it must also pass, with supported ends being an
@@ -117,14 +119,17 @@ def evidence_ok(iso: Isoform, coding: str, sites: Optional[SiteIndex], in_intron
 def coding_label(iso: Isoform, models: List[Transcript], genome: Genome, table, p: C.Params
                  ) -> Tuple[str, Optional[Transcript]]:
     """('low', isoform with its CDS) when its ORF is the gene's product or a contiguous part of
-    it and is not an NMD target; else 'nmd' or 'none' (and no CDS)."""
+    it and is not an NMD target; ('nmd', isoform with its CDS) for an NMD target whose start codon is
+    in a coding transcript's frame (no CDS when it isn't); else ('none', None)."""
     if not iso.tx.cds:          # the coding stage puts the isoform's ORF on it as its CDS
         return "none", None
     t = iso.tx.copy()
     pep = genome.protein(t, table)
     nmd = pep.endswith("*") and C.nmd_distance(t) > p.NMD_STOP_TO_JUNCTION
     if nmd:
-        return "nmd", None
+        from .refframe import _cds_phase, cds_start   # avoids an import cycle
+        in_frame = pep.startswith("M") and any(_cds_phase(m, cds_start(t)) == 0 for m in models)
+        return "nmd", (t if in_frame else None)
     core = pep.rstrip("*")
     label = "low" if pep.startswith("M") and pep.endswith("*") else "partial"   # from the sequence, as the NF tags
     for m in models:
@@ -211,7 +216,10 @@ def run_noncoding(ann: AnnotationSet, isos: Dict[str, Isoform], candidates: Iter
         return "main" if coding == "low" or not require_ends or (tss and pa) else "supplemental"
 
     def tag(t: Transcript, iso: Isoform, coding: str) -> None:
-        t.attrs = {"transcript_type": {"low": "pasa_low_coding", "partial": "pasa_partial_coding"}.get(coding, "pasa_noncoding"),
+        ttype = {"low": "pasa_low_coding", "partial": "pasa_partial_coding"}.get(coding, "pasa_noncoding")
+        if coding == "nmd" and t.cds:
+            ttype = "nonsense_mediated_decay"     # GENCODE's type: a CDS whose stop is a PTC
+        t.attrs = {"transcript_type": ttype,
                    **{k: iso.tx.attrs[k] for k in ("cds_start_NF", "cds_end_NF", "pasa_xg_orf") if k in iso.tx.attrs},
                    "pasa_xg_coding": coding, "pasa_xg_update": "noncoding_isoform",
                    "pasa_xg_round": "noncoding", "pasa_xg_isoform": iso.id,

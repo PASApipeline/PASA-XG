@@ -73,6 +73,7 @@ STATUS = {
     45: "fl-cdna assembly provides isoform for novel gene which overlaps existing annotations",
     47: "assembly differs from a model only at its ends, same protein: sites recorded on the model",
     48: "assembly differs from a model only at its ends, alternative protein from an unsupported end",
+    49: "assembly gives a reference model another coding region: new isoform, the reference CDS kept",
     100: "below the expression threshold",
 }
 
@@ -81,7 +82,7 @@ ACTION = {
     4: "utr_update", 13: "utr_update",
     6: "protein_update", 8: "protein_update", 14: "protein_update", 16: "protein_update",
     9: "new_isoform", 24: "new_isoform", 25: "new_isoform", 27: "new_isoform",
-    33: "new_isoform", 44: "new_isoform", 32: "new_isoform",
+    33: "new_isoform", 44: "new_isoform", 32: "new_isoform", 49: "new_isoform",
     29: "merge_genes", 36: "merge_genes",
     40: "split_gene",
     26: "replace_unsupported_model", 31: "replace_unsupported_model",
@@ -157,12 +158,16 @@ class RoundComparer:
                  prior_support: Optional[Dict[str, Set[str]]] = None,
                  prior_fl_models: Optional[Set[str]] = None,
                  supported_models: Optional[Set[str]] = None,
-                 sites: Optional[SiteIndex] = None) -> None:
+                 sites: Optional[SiteIndex] = None,
+                 reference_ids: Optional[Set[str]] = None) -> None:
         """`prior_support` / `prior_fl_models`: models built or confirmed by isoforms in
         earlier rounds. PASA forgets these between runs, so a later run may overwrite a
         model an earlier one built from a full-length transcript; rounds remember.
-        `sites`: TSS / polyA sites (sites.py); None or empty leaves ends to PASA's rules."""
+        `sites`: TSS / polyA sites (sites.py); None or empty leaves ends to PASA's rules.
+        `reference_ids`: the input annotation's transcripts, whose CDS Params.REFERENCE_CDS_UPDATES
+        guards (default: every model in `ann`)."""
         self.ann, self.genome, self.table, self.p = ann, genome, table, p
+        self.reference_ids: Set[str] = set(reference_ids) if reference_ids is not None else {t.id for t in ann.transcripts()}
         self.sites = sites if sites is not None and len(sites) else None
         self.anchor_set: Set[Tuple[str, str]] = set()                # (model, kind) set this round
         self.alt_sites: Dict[str, Set[Tuple[str, int, str]]] = defaultdict(set)  # model -> sites
@@ -198,6 +203,19 @@ class RoundComparer:
     def compare(self, old: Transcript, new: Transcript, fl_alt: bool = False,
                 new_partials: Tuple[bool, bool] = (False, False)) -> Tuple[bool, str]:
         return C.compare_proteins(old, new, self.genome, self.table, self.p, fl_alt, *new_partials)
+
+    def cds_change_ok(self, m: Transcript, new: Transcript) -> bool:
+        """May an update change model m's CDS in place to new's (Params.REFERENCE_CDS_UPDATES)?"""
+        if m.id not in self.reference_ids:
+            return True
+        mode = "never" if self.p.ADDITIVE else self.p.REFERENCE_CDS_UPDATES
+        if mode == "all":
+            return True
+        return mode == "extend" and C.cds_extends(m, new, self.genome, self.table)
+
+    def alt_cds_msg(self, m: Transcript) -> str:
+        how = "--additive" if self.p.ADDITIVE else f"--reference_cds_updates {self.p.REFERENCE_CDS_UPDATES}"
+        return f"another coding region on {m.id}'s structure ({how}): new isoform, {m.id} keeps its CDS"
 
     def mapped_genes(self, cands: List[Cand], fli: bool, strand: Optional[str]) -> List[str]:
         """PASA's get_potential_overlapping_annotations for a set of isoforms."""
@@ -461,6 +479,11 @@ class RoundComparer:
                 c.set(4, True, "CDS same, UTRs differ", model=mid)
             else:
                 ok, msg = self.compare(m, new, new_partials=self.partials(m))
+                if ok and not self.cds_change_ok(m, new):
+                    # the model is kept (and accounted for); its other coding region is an isoform
+                    c.set(49, True, self.alt_cds_msg(m) + "; " + msg, model=mid, alt_splice=True, updated=new)
+                    updated.add(mid)
+                    continue
                 c.set(6 if ok else 7, ok, msg, model=mid)
             if c.valid:
                 updated.add(mid)
@@ -557,11 +580,12 @@ class RoundComparer:
         fl_updated = [m.id for m in models if m.id in self.models_unavail]
         # with sites, the most-expressed isoform sets an unanchored model end first
         order = sorted(cands, key=lambda c: -c.iso.tpm) if self.sites is not None else cands
+        alt_cds: Set[str] = set()     # isoforms giving a model another coding region (status 49)
         for mid in available:
             m = original[mid]
             parts = self.partials(m)
             for c in order:
-                if c.id in merged_into:
+                if c.id in merged_into or c.id in alt_cds:
                     continue
                 merged = merge_compatible(current_exons[mid], c.exons)
                 if merged is None:
@@ -578,6 +602,11 @@ class RoundComparer:
                     if ok:
                         ok, umsg = C.check_utr_exons(new, self.p)
                         msg = msg if ok else umsg
+                    if ok and not self.cds_change_ok(m, new):
+                        new.id = c.id
+                        c.set(49, True, self.alt_cds_msg(m) + "; " + msg, model=mid, alt_splice=True, updated=new)
+                        alt_cds.add(c.id)
+                        continue
                     status, incorporated = (14, True) if ok else (15, False)
                 if incorporated:
                     current_gene[mid], current_exons[mid] = new, merged
@@ -588,7 +617,7 @@ class RoundComparer:
                 else:
                     c.set(status, False, msg, model=mid)
         for c in cands:
-            if c.id not in merged_into and c.iso.tx.num_exons == 1:
+            if c.id not in merged_into and c.id not in alt_cds and c.iso.tx.num_exons == 1:
                 c.set(34, False, "single-exon isoform incompatible with the gene models")
         # stitching
         for c in cands:
@@ -656,7 +685,7 @@ class RoundComparer:
     def stomp_nonfl(self, cands, original, current_exons, current_gene, merged_into,
                     available, fl_updated) -> None:
         for c in cands:
-            if c.status == 34 or c.id in merged_into:
+            if c.status in (34, 49) or c.id in merged_into:
                 continue
             unsupported = [m for m in available if not self.model_support.get(m)]
             supported = [m for m in available if self.model_support.get(m)]
@@ -871,12 +900,13 @@ def run_round(ann: AnnotationSet, isoforms: List[Isoform], genome: Genome, table
               prior_fl_models: Optional[Set[str]] = None,
               all_isoforms: Optional[Iterable[Isoform]] = None,
               sites: Optional[SiteIndex] = None,
+              reference_ids: Optional[Set[str]] = None,
               ) -> Tuple[List[Decision], List[Tuple[str, List[Cand]]], RoundComparer]:
     """Compare `isoforms` with `ann`; returns decisions, approved splits and the comparer.
     Model support is judged against `all_isoforms` (default: `isoforms`)."""
     supported = supported_models(ann, all_isoforms if all_isoforms is not None else isoforms) \
         if p.PROTECT_SUPPORTED_MODELS else set()
-    rc = RoundComparer(ann, genome, table, p, prior_support, prior_fl_models, supported, sites)
+    rc = RoundComparer(ann, genome, table, p, prior_support, prior_fl_models, supported, sites, reference_ids)
     groups: Dict[str, List[Cand]] = defaultdict(list)
     for iso in isoforms:
         groups[iso.tx.gene_id].append(Cand(iso, iso.tx.gene_id, fl=iso.full_length))

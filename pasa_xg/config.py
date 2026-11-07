@@ -44,14 +44,17 @@ class Settings:
     lraa_opts: Optional[str] = None
     transdecoder_cmd: str = "pytransdecoder"
     genetic_code: str = "Universal"
-    min_orf_aa: int = 100
+    min_orf_aa: int = 50
     pfam_hits: Optional[str] = None
     blastp_hits: Optional[str] = None
+    homology_proteins: Optional[str] = None   # protein FASTA: diamond blastp of the long ORFs, for pyTD
+    diamond_cmd: str = "diamond"
     # annotation update
     max_rounds: int = 3
     run_label: str = ""                # recorded in pasa_xg_history (default: out dir name)
     protect_supported_models: bool = True
     additive: bool = False             # never replace or split existing models
+    reference_cds_updates: str = "extend"  # in-place reference CDS changes: extend / never / all
     trust_fl_status: bool = True       # PASA's --TRUST_FL_STATUS
     reject_nmd_targets: bool = True
     nmd_stop_to_junction: int = 50
@@ -78,6 +81,8 @@ class Settings:
                 raise ValueError("--input_type does not apply to --isoforms_gtf")
         elif self.input_type not in INPUT_TYPES:
             raise ValueError(f"--input_type must be one of {', '.join(INPUT_TYPES)}")
+        if self.reference_cds_updates not in ("extend", "never", "all"):
+            raise ValueError("--reference_cds_updates must be extend, never or all")
 
     def minimap2_args(self) -> List[str]:
         if self.minimap2_opts:

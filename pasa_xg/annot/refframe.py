@@ -6,8 +6,8 @@ a different reading:
 
 - The transcript holds the best-matching reference's start codon upstream of its ORF. A scanning
   ribosome meets that ATG first, and here it opens a different, overlapping ORF. When the
-  ORF from the reference ATG is long enough and not an NMD target it becomes the ORF; otherwise the
-  transcript is taken as noncoding (no CDS).
+  ORF from the reference ATG is long enough it becomes the ORF (an NMD target keeps it too, as an NMD
+  candidate: transcript_type nonsense_mediated_decay); a short one makes the transcript noncoding.
 - The transcript is end-incomplete in the reference CDS (best-matching reference): it starts after the
   reference start codon with no TSS support, or ends before the reference stop codon, with no polyA
   support and no stop codon in the reference frame. Its ORF is then read in the reference frame (from
@@ -102,7 +102,7 @@ def _read(seq: str, start: int, table: Dict[str, str]) -> Tuple[int, bool]:
 
 @dataclass
 class Call:
-    why: str                      # reference_start | reference_start_uorf | reference_frame_partial
+    why: str                      # reference_start | reference_start_nmd | reference_start_uorf | reference_frame_partial
     start: int = 0                # 0-based half-open ORF on the transcript sequence
     end: int = 0
     has_start: bool = True
@@ -124,8 +124,9 @@ def decide(t: Transcript, refs, seq: str, table: Dict[str, str], p: C.Params, ts
         s = r_atg
         e, has_stop = _read(seq, s, table)
         probe = t.copy(cds=t.segments_for(s + 1, e))
-        if has_stop and (e - s) // 3 - 1 >= min_aa and C.nmd_distance(probe) <= p.NMD_STOP_TO_JUNCTION:
-            return Call("reference_start", s, e, True, True)
+        if has_stop and (e - s) // 3 - 1 >= min_aa:
+            nmd = C.nmd_distance(probe) > p.NMD_STOP_TO_JUNCTION
+            return Call("reference_start_nmd" if nmd else "reference_start", s, e, True, True)
         return Call("reference_start_uorf")
     r = refs[0][1]
     rs, re_ = cds_start(r), cds_stop(r)
@@ -156,13 +157,19 @@ def _apply(t: Transcript, c: Call) -> None:
     t.cds = t.segments_for(c.start + 1, c.end)
     t.cds_offset = 0
     t.attrs = {**{k: v for k, v in t.attrs.items() if k not in ("cds_start_NF", "cds_end_NF")}, "pasa_xg_orf": c.why,
+               **(NMD_ATTRS if c.why == "reference_start_nmd" else {}),
                **({"cds_start_NF": "true"} if not c.has_start else {}),
                **({"cds_end_NF": "true"} if not c.has_stop else {})}
 
 
+NMD_ATTRS = {"transcript_type": "nonsense_mediated_decay", "pasa_xg_coding": "nmd"}
+
+
 def _label(c: Call) -> str:
     if c.why == "reference_start_uorf":
-        return "noncoding: reference start opens a short / NMD ORF"
+        return "noncoding: reference start opens a short ORF"
+    if c.why == "reference_start_nmd":
+        return "NMD candidate: ORF from the reference start codon"
     if c.why == "reference_start":
         return "ORF from the reference start codon"
     return "partial in the reference frame"

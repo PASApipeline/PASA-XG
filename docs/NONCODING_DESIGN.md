@@ -216,7 +216,11 @@ decisions are one more round in `annot_update.decisions.tsv`. Statuses: 101 adde
   - `pasa_xg_coding`: `low` when the isoform's ORF (its CDS from the coding stage) is a substring
     of a gene protein or passes `compare_proteins` (the CDS is kept); `nmd` when the stop codon is
     more than `NMD_STOP_TO_JUNCTION` upstream of the last junction; else `none`.
-  - `transcript_type`: `pasa_low_coding` or `pasa_noncoding`.
+  - NMD candidates keep their CDS (2026-11-07, user decision) when the ORF's start codon is in the frame of one of the gene's
+    coding transcripts, as GENCODE annotates them: `transcript_type "nonsense_mediated_decay"`, `pasa_xg_coding "nmd"`. An
+    NMD-like ORF in another frame gets no CDS. They are in the `.pep` output, so a new-protein analysis must leave out
+    `transcript_type nonsense_mediated_decay`.
+  - `transcript_type`: `pasa_low_coding`, `pasa_partial_coding`, `nonsense_mediated_decay` or `pasa_noncoding`.
   - Every gene gets `pasa_xg_gene_class` `coding` / `likely_noncoding` (on GTF transcript lines
     too). Novel genes are `PXG_gene_N`, with `pasa_xg_novel "noncoding"` and `antisense_to` when
     they overlap a gene on the other strand.
@@ -241,7 +245,8 @@ added or whose CDS it changed. Reference models whose CDS is unchanged are never
 
 - **Reference start upstream.** The transcript holds a reference start codon (the 5'-most present) upstream of its ORF. pyTD's
   ORF is right for the sequence, but the reference ATG opens a different, overlapping ORF, which a scanning ribosome meets first.
-  - If the ORF from that ATG is >= `--min_orf_aa` and not an NMD target, it becomes the ORF.
+  - If the ORF from that ATG is >= `--min_orf_aa` (default 50 aa since 2026-11-07), it becomes the ORF. An NMD target keeps
+    it as an NMD candidate (`pasa_xg_orf "reference_start_nmd"`, `transcript_type "nonsense_mediated_decay"`).
   - Otherwise the transcript is noncoding (`pasa_xg_orf "reference_start_uorf"`).
 - **End-incomplete.** The transcript starts after the reference start codon without TSS support, or ends before the reference
   stop without polyA support. It is then read in the reference frame. When the start or the stop is missing, the ORF is partial
@@ -267,3 +272,25 @@ New proteins that skip the reference start fell from 895 to 22.
   - Their IDs don't collide with the main annotation's, so the two files combine.
 - `low` transcripts (a complete ORF consistent with the gene's protein) stay in the main annotation.
 - `--noncoding_ends any` puts everything in the main annotation.
+
+## CDS conventions (2026-11-07, user decisions)
+
+- **Reference CDS updates** (`--reference_cds_updates`, default `extend`). A compatible update (PASA statuses 6 and 14) that
+  would change a reference transcript's CDS in place may only extend it: every base of the reference CDS stays in the new CDS,
+  and the reference protein lies within the new one (e.g. an upstream in-frame ATG). A shorter or reframed CDS never replaces
+  the reference CDS. Instead the isoform is added as a new isoform carrying the other coding region on the same (merged)
+  structure, and the reference transcript stays as it was (status 49). `never` keeps every reference CDS; `all` is PASA's
+  behavior. `--additive` implies `never`. "Reference" means a transcript of the input annotation. Transcripts the update
+  itself built in earlier rounds can still change.
+  - Not covered: structural replacements (statuses 8, 16, 26, 31; non-additive mode only, and not for supported models by
+    default), which replace a model's structure along with its CDS.
+- **NMD candidates keep their CDS** (noncoding pass, above). The coding rounds still reject updates that make NMD targets
+  (`--allow_nmd_targets` to allow them).
+- **Short ORFs.** `--min_orf_aa` defaults to 50. pytransdecoder holds ORFs under 100 codons to its short-ORF frame-contrast
+  test unless homology supports them. `--homology_proteins FASTA` runs `diamond blastp` (E <= 1e-5, best hit) of the long
+  ORFs against it and passes the hits to pytransdecoder (`--retain_blastp_hits`). The hits keep homologous ORFs and inform
+  start codons.
+- **Immunoglobulin / T-cell receptor genes are left as annotated.** These are genes with `gene_type` IG_* / TR_* (GENCODE) or
+  `gene_biotype` V/D/J_segment, C_region (RefSeq). Isoforms whose exons overlap them on their strand are not used at all:
+  status 50 in the decisions table, with no updates, new isoforms or novel genes. Rearranged BCR / TCR transcripts join
+  segments somatically and are not germline isoforms.

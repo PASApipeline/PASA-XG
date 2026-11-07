@@ -39,10 +39,22 @@ def parse_pep_headers(pep_path: str) -> Dict[str, Orf]:
     return best
 
 
+def diamond_hits(s: Settings, pep: str, d: str, logp: str) -> str:
+    """diamond blastp of the long ORFs against --homology_proteins (outfmt 6, best hit per ORF, E <= 1e-5)."""
+    db = os.path.join(d, "homology_proteins")
+    out = os.path.join(d, "longest_orfs.diamond.outfmt6")
+    run_cmd([s.diamond_cmd, "makedb", "--in", os.path.abspath(s.homology_proteins), "-d", db, "--threads", str(s.cpu)],
+            log_path=logp, cwd=d)
+    run_cmd([s.diamond_cmd, "blastp", "-q", pep, "-d", db, "-o", out, "--outfmt", "6", "--evalue", "1e-5",
+             "--max-target-seqs", "1", "--threads", str(s.cpu)], log_path=logp, cwd=d)
+    return out
+
+
 def run(run: Run, s: Settings, isos_out: Dict[str, Any]) -> Dict[str, Any]:
     inputs = {"isoforms": isos_out["isoforms_path"], "min_aa": s.min_orf_aa,
               "code": s.genetic_code, "pfam": s.pfam_hits, "blastp": s.blastp_hits,
-              "stage": "coding/3", "transdecoder": s.transdecoder_cmd, "src": code_digest("pasa_xg.stages.coding", "pasa_xg.isoforms", "pasa_xg.models")}
+              "homology": run.fdigest(s.homology_proteins) if s.homology_proteins else None,
+              "stage": "coding/4", "transdecoder": s.transdecoder_cmd, "src": code_digest("pasa_xg.stages.coding", "pasa_xg.isoforms", "pasa_xg.models")}
 
     def body(d: str) -> Dict[str, Any]:
         logp = os.path.join(d, "transdecoder.log")
@@ -60,8 +72,19 @@ def run(run: Run, s: Settings, isos_out: Dict[str, Any]) -> Dict[str, Any]:
             predict.append("--no_refine_starts")
         if s.pfam_hits:
             predict += ["--retain_pfam_hits", s.pfam_hits]
-        if s.blastp_hits:
-            predict += ["--retain_blastp_hits", s.blastp_hits]
+        blastp = [s.blastp_hits] if s.blastp_hits else []
+        if s.homology_proteins:
+            blastp.append(diamond_hits(s, os.path.join(td, "isoforms.fa.transdecoder_dir", "longest_orfs.pep"),
+                                       d, logp))
+        if len(blastp) > 1:
+            both = os.path.join(d, "blastp_hits.outfmt6")
+            with open(both, "w") as out:
+                for path in blastp:
+                    with open(path) as fh:
+                        out.write(fh.read())
+            blastp = [both]
+        if blastp:
+            predict += ["--retain_blastp_hits", blastp[0]]
         run_cmd(predict, log_path=logp, cwd=d)
         orfs = parse_pep_headers(os.path.join(td, "isoforms.fa.transdecoder.pep"))
         for tid, iso in isos.items():
