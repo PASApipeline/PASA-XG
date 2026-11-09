@@ -24,7 +24,7 @@ from ..annot.compare import STATUS, Decision, run_round
 IG_TR_STATUS = 50
 STATUS = {**STATUS, IG_TR_STATUS: "isoform on an immunoglobulin / T-cell receptor gene segment: left as annotated"}
 from ..annot import refframe
-from ..annot.noncoding import NC_STATUS, run_noncoding, tie_kind
+from ..annot.noncoding import NC_STATUS, nmd_to_supplemental, run_noncoding, tie_kind
 from ..annot.structure import introns_of
 from ..annot.sites import POLYA, TSS, SiteIndex, add_isoform_ends, five_prime, load_bed, three_prime
 from ..config import Settings
@@ -226,16 +226,20 @@ def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome,
         current, ncd, supp = run_noncoding(current, eligible, cands, genome, table, p, sites if len(sites) else None,
                                            s.run_label, require_ends=s.noncoding_ends == "both")
         rnd = len(summary) + 1
+
+        def nc_row(d):
+            i, prev = isos[d.isoform_id], last.get(d.isoform_id, {})
+            return {"round": rnd, "isoform_id": d.isoform_id, "lraa_gene": i.tx.gene_id,
+                    "action": d.action, "valid": d.status in (101, 102, 107, 108), "pasa_status": d.status,
+                    "pasa_status_descr": NC_STATUS[d.status], "genes": " ".join(d.genes), "model": "",
+                    "annotation_id": d.annotation_id, "full_length": i.full_length,
+                    "num_exons": i.tx.num_exons, "TPM": i.tpm, "isoform_fraction": i.isoform_fraction,
+                    "comment": "; ".join(x for x in (d.comment, f"coding round: {prev.get('action', '')} "
+                                                     f"({prev.get('pasa_status', '')}) {prev.get('comment', '')}".strip()) if x)}
+
         nrows = []
         for d in ncd:
-            i, prev = isos[d.isoform_id], last.get(d.isoform_id, {})
-            nrows.append({"round": rnd, "isoform_id": d.isoform_id, "lraa_gene": i.tx.gene_id,
-                          "action": d.action, "valid": d.status in (101, 102, 107, 108), "pasa_status": d.status,
-                          "pasa_status_descr": NC_STATUS[d.status], "genes": " ".join(d.genes), "model": "",
-                          "annotation_id": d.annotation_id, "full_length": i.full_length,
-                          "num_exons": i.tx.num_exons, "TPM": i.tpm, "isoform_fraction": i.isoform_fraction,
-                          "comment": "; ".join(x for x in (d.comment, f"coding round: {prev.get('action', '')} "
-                                                           f"({prev.get('pasa_status', '')}) {prev.get('comment', '')}".strip()) if x)})
+            nrows.append(nc_row(d))
             if d.status in (101, 102):
                 incorporated.add(d.isoform_id)
         rows += nrows
@@ -249,7 +253,12 @@ def update(ann: AnnotationSet, isos: Dict[str, iso_mod.Isoform], genome: Genome,
     refframe.keep_reference_cds(current, ann, genome, table)
     refframe.sync_partial_tags(current, ann, genome, table)
     if s.include_noncoding:
-        # lower-confidence noncoding isoforms (supplemental tier), apart from the main annotation
+        # lower-confidence isoforms and NMD candidates (supplemental tier), apart from the main annotation
+        if s.noncoding_ends == "both":
+            moved = nmd_to_supplemental(current, supp, ann)
+            rows += [nc_row(d) for d in moved]
+            incorporated -= {d.isoform_id for d in moved}
+            summary[-1]["supplemental"] += len(moved)
         refframe.sync_partial_tags(supp, ann, genome, table)
         write_annotation(supp, genome, table, os.path.join(out_dir, "annotation.supplemental"))
     write_conflicts(rows, incorporated, isos, current, os.path.join(out_dir, "annot_update.gene_conflicts.tsv"))

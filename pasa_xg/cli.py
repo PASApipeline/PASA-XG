@@ -114,9 +114,10 @@ def _run_parser(p: argparse.ArgumentParser) -> None:
                         "(cds_start_NF / cds_end_NF) instead of from a downstream Met or a new stop")
     u.add_argument("--noncoding_ends", choices=("both", "any"), default="both",
                    help="noncoding pass: 'both' (default) puts an added transcript without a complete CDS "
-                        "consistent with its gene (pasa_xg_coding none / nmd / partial) in the main annotation "
+                        "consistent with its gene (pasa_xg_coding none / partial) in the main annotation "
                         "only when its TSS and polyA ends are both supported (CAGE / PolyASite sites or LRAA "
-                        "calls); the rest go to annotation.supplemental.gtf/gff3 (pasa_xg_tier supplemental). "
+                        "calls); the rest, and all added NMD candidates, go to annotation.supplemental.gtf/gff3 "
+                        "(pasa_xg_tier supplemental). "
                         "'any': all in the main annotation")
     u.add_argument("--min_sample_fraction", type=float, default=0.01,
                    help="noncoding pass, for isoforms carrying n_samples and n_samples_total (multi-sample "

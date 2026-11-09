@@ -6,7 +6,7 @@ import pandas as pd
 from pasa_xg.annot import refframe
 from pasa_xg.annot.apply import apply_round
 from pasa_xg.annot.checks import Params, cds_extends, nmd_distance
-from pasa_xg.annot.noncoding import run_noncoding
+from pasa_xg.annot.noncoding import nmd_to_supplemental, run_noncoding
 from pasa_xg.models import AnnotationSet, Transcript
 
 from test_annot import TABLE, Locus, decide, iso, model
@@ -85,6 +85,29 @@ def test_reference_start_opening_an_nmd_orf_keeps_it_as_an_nmd_candidate(tmp_pat
     new, d, _ = run_noncoding(ann, {"fs": i}, ["fs"], g, TABLE, Params(), None, require_ends=False)
     t = new.genes["G1"].transcripts[d[0].annotation_id]
     assert t.cds and t.attrs["pasa_xg_coding"] == "nmd" and t.attrs["transcript_type"] == "nonsense_mediated_decay"
+    # by default it goes to the supplemental tier, even with both ends supported
+    i.tss = i.polya = True
+    new, d, supp = run_noncoding(ann, {"fs": i}, ["fs"], g, TABLE, Params(), None)
+    assert d[0].status == 107 and d[0].annotation_id in supp.genes["G1"].transcripts
+    assert d[0].annotation_id not in new.genes["G1"].transcripts and supp.genes["G1"].transcripts[d[0].annotation_id].cds
+
+
+def test_added_nmd_candidates_leave_the_main_annotation_but_reference_ones_stay(tmp_path):
+    L = Locus(tmp_path)
+    L.spacer(300)
+    ex = L.gene([300, 300, 300, 300])
+    g = L.genome()
+    start = AnnotationSet([model("G1", ex, g)])
+    current = start.copy()
+    gene = current.genes["G1"]
+    ref_id, ref = next(iter(gene.transcripts.items()))
+    ref.attrs = {**ref.attrs, **refframe.NMD_ATTRS}
+    gene.transcripts["G1.pxg1"] = ref.copy(id="G1.pxg1", attrs={**refframe.NMD_ATTRS, "pasa_xg_isoform": "iso1"})
+    supp = AnnotationSet([model("G1", ex, g)], label="supplemental")
+    d = nmd_to_supplemental(current, supp, start)
+    assert [(x.isoform_id, x.status, x.annotation_id) for x in d] == [("iso1", 107, "G1.pxg1")]
+    assert list(current.genes["G1"].transcripts) == [ref_id]
+    assert "G1.pxg1" in supp.genes["G1"].transcripts and len(supp.genes["G1"].transcripts) == 2
 
 
 def test_ig_tr_gene_segments_are_left_as_annotated(tmp_path):

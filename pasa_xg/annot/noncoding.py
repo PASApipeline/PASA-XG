@@ -51,8 +51,8 @@ NC_STATUS = {
     104: "noncoding pass: assembles with an existing transcript",
     105: "noncoding pass: overlaps two or more genes",
     106: "noncoding pass: mono-exonic isoform outside a known gene",
-    107: "noncoding pass: isoform of a known gene, supplemental tier (TSS and polyA not both supported)",
-    108: "noncoding pass: isoform of a novel noncoding gene, supplemental tier (TSS and polyA not both supported)",
+    107: "noncoding pass: isoform of a known gene, supplemental tier (NMD candidate, or TSS and polyA not both supported)",
+    108: "noncoding pass: isoform of a novel noncoding gene, supplemental tier (NMD candidate, or TSS and polyA not both supported)",
 }
 NC_ACTION = {101: "noncoding_isoform", 102: "noncoding_gene",
              107: "noncoding_isoform_supplemental", 108: "noncoding_gene_supplemental"}
@@ -202,9 +202,9 @@ def _in_intron(t: Transcript, ann: AnnotationSet) -> bool:
 def run_noncoding(ann: AnnotationSet, isos: Dict[str, Isoform], candidates: Iterable[str],
                   genome: Genome, table, p: C.Params, sites: Optional[SiteIndex], run_label: str = "",
                   require_ends: bool = True) -> Tuple[AnnotationSet, List[NcDecision], AnnotationSet]:
-    """The noncoding pass. With require_ends, an added transcript without a complete CDS consistent with
-    its gene (pasa_xg_coding none / nmd / partial) needs a supported TSS and polyA end for the main
-    annotation; otherwise it goes to the supplemental tier (third return value, its own genes)."""
+    """The noncoding pass. With require_ends, NMD candidates go to the supplemental tier (third return
+    value, its own genes), and so does an added transcript without a complete CDS consistent with its
+    gene (pasa_xg_coding none / partial) unless its TSS and polyA ends are both supported."""
     new = ann.copy(label="noncoding")
     namer = Namer(new)
     out: List[NcDecision] = []
@@ -212,8 +212,12 @@ def run_noncoding(ann: AnnotationSet, isos: Dict[str, Isoform], candidates: Iter
     novel: List[Tuple[Transcript, Isoform]] = []
 
     def tier(iso: Isoform, coding: str) -> str:
+        if not require_ends:
+            return "main"
+        if coding == "nmd":
+            return "supplemental"
         tss, pa = supported_ends(iso, sites)
-        return "main" if coding == "low" or not require_ends or (tss and pa) else "supplemental"
+        return "main" if coding == "low" or (tss and pa) else "supplemental"
 
     def tag(t: Transcript, iso: Isoform, coding: str) -> None:
         ttype = {"low": "pasa_low_coding", "partial": "pasa_partial_coding"}.get(coding, "pasa_noncoding")
@@ -308,18 +312,37 @@ def run_noncoding(ann: AnnotationSet, isos: Dict[str, Isoform], candidates: Iter
     return new, out, supp
 
 
-def split_tiers(ann: AnnotationSet) -> Tuple[AnnotationSet, AnnotationSet]:
-    """Transcripts tagged pasa_xg_tier supplemental move to their own annotation, under a copy of their
-    gene (a gene left without transcripts leaves the main annotation)."""
-    supp = AnnotationSet([], label="supplemental")
+def nmd_to_supplemental(ann: AnnotationSet, supp: AnnotationSet, start: AnnotationSet) -> List[NcDecision]:
+    """Added transcripts that are NMD candidates and still in the main annotation move to the supplemental
+    tier: the reference-frame check labels them after the noncoding pass. The starting annotation's own
+    transcripts stay."""
+    ref = {t.id for t in start.transcripts()}
+    out = []
+    for t in ann.transcripts():
+        if t.id not in ref and t.attrs.get("pasa_xg_coding") == "nmd":
+            t.attrs = {**t.attrs, "pasa_xg_tier": "supplemental"}
+            out.append(NcDecision(t.attrs["pasa_xg_isoform"], 107, "nmd; added by a coding round, an NMD candidate by the "
+                                  "reference-frame check", [t.gene_id], t.id))
+    split_tiers(ann, supp)
+    return out
+
+
+def split_tiers(ann: AnnotationSet, supp: Optional[AnnotationSet] = None) -> Tuple[AnnotationSet, AnnotationSet]:
+    """Transcripts tagged pasa_xg_tier supplemental move to their own annotation (supp, or a new one), under
+    a copy of their gene (a gene left without transcripts leaves the main annotation)."""
+    if supp is None:
+        supp = AnnotationSet([], label="supplemental")
     for g in list(ann):
         moved = {k: t for k, t in g.transcripts.items() if t.attrs.get("pasa_xg_tier") == "supplemental"}
         if not moved:
             continue
         for k in moved:
             del g.transcripts[k]
-        supp.add_gene(Gene(g.id, g.contig, g.strand, moved, dict(g.attrs)))
+        if g.id in supp.genes:
+            supp.genes[g.id].transcripts.update(moved)
+        else:
+            supp.add_gene(Gene(g.id, g.contig, g.strand, moved, dict(g.attrs)))
         if not g.transcripts:
             ann.remove_gene(g.id)
-    ann._index = None
+    ann._index = supp._index = None
     return ann, supp
