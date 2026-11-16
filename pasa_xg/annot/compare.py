@@ -462,6 +462,12 @@ class RoundComparer:
                     # UTR the isoform lacks): PASA falls back to the isoform alone, shortening
                     # the model; additive, or with sites (models are never shortened), keeps
                     # the merged exons with the model's CDS instead
+                    if not all(any(a <= x and y <= b for a, b in merged) for x, y in m.cds):
+                        # the model's CDS runs to a terminal exon edge the merge moved to the
+                        # isoform's splice site (a truncated, cds_NF model): no in-place update
+                        del model_to_cand[m.id], cand_to_model[c.id]
+                        c.pending_ends = []
+                        continue
                     c.updated = mg.copy(cds=list(m.cds), cds_offset=m.cds_offset)
         trying = [c for c in valid if c.id not in demoted_ids]
         # models built from full-length isoforms in earlier rounds are not replaced
