@@ -103,6 +103,7 @@ def _read(seq: str, start: int, table: Dict[str, str]) -> Tuple[int, bool]:
 @dataclass
 class Call:
     why: str                      # reference_start | reference_start_nmd | reference_start_uorf | reference_frame_partial
+                                  # | reference_frame_short
     start: int = 0                # 0-based half-open ORF on the transcript sequence
     end: int = 0
     has_start: bool = True
@@ -146,11 +147,13 @@ def decide(t: Transcript, refs, seq: str, table: Dict[str, str], p: C.Params, ts
     end, has_stop = _read(seq, start, table)
     if has_start and has_stop:
         return None     # a complete ORF in the reference frame: nothing partial about it
+    if (end - start) // 3 - (1 if has_stop else 0) < min_aa:
+        return Call("reference_frame_short")   # under the minimum ORF (down to a lone stop codon): noncoding
     return Call("reference_frame_partial", start, end, has_start, has_stop)
 
 
 def _apply(t: Transcript, c: Call) -> None:
-    if c.why == "reference_start_uorf":
+    if c.why in ("reference_start_uorf", "reference_frame_short"):
         t.cds = []
         t.attrs = {**t.attrs, "pasa_xg_orf": c.why}
         return
@@ -168,6 +171,8 @@ NMD_ATTRS = {"transcript_type": "nonsense_mediated_decay", "pasa_xg_coding": "nm
 def _label(c: Call) -> str:
     if c.why == "reference_start_uorf":
         return "noncoding: reference start opens a short ORF"
+    if c.why == "reference_frame_short":
+        return "noncoding: partial ORF in the reference frame under the minimum length"
     if c.why == "reference_start_nmd":
         return "NMD candidate: ORF from the reference start codon"
     if c.why == "reference_start":
@@ -189,7 +194,7 @@ def check(isos: Dict[str, Isoform], ann: AnnotationSet, genome: Genome, table: D
         if c is None:
             continue
         _apply(t, c)
-        if c.why == "reference_start_uorf":
+        if c.why in ("reference_start_uorf", "reference_frame_short"):
             iso.orf = None
         else:
             kind = ("complete" if c.has_stop else "3prime_partial") if c.has_start else \
